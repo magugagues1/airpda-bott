@@ -542,9 +542,9 @@ const prefixCommands = [
           ctx.fillStyle = 'rgba(0,0,0,0.55)';
           ctx.fillRect(10, c.height - 65, c.width - 20, 48);
           ctx.fillStyle = '#ff4444';
-          ctx.font = 'bold 32px Arial, sans-serif';
+          ctx.font = 'bold 28px Arial, sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText(`📍 CP: ${codigoPostal}`, c.width / 2, c.height - 28);
+          ctx.fillText(`CP: ${codigoPostal}`, c.width / 2, c.height - 28);
           mapaAttachment = new AttachmentBuilder(c.toBuffer(), { name: 'mapa.png' });
         } catch (e) {
           console.error('[911 Canvas]', e.message);
@@ -648,12 +648,12 @@ const prefixCommands = [
         const c = cv.createCanvas(img.width, img.height);
         const ctx = c.getContext('2d');
         ctx.drawImage(img, 0, 0);
-        ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.fillRect(10, c.height - 65, c.width - 20, 48);
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(10, c.height - 60, c.width - 20, 42);
         ctx.fillStyle = '#ff4444';
-        ctx.font = 'bold 32px Arial, sans-serif';
+        ctx.font = 'bold 28px Arial, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(`📍 CP: ${codigo}`, c.width / 2, c.height - 28);
+        ctx.fillText(`CP: ${codigo}`, c.width / 2, c.height - 28);
         const { AttachmentBuilder } = require('discord.js');
         const attach = new AttachmentBuilder(c.toBuffer(), { name: 'mapa.png' });
         const embed = new EmbedBuilder()
