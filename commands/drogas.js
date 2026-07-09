@@ -74,6 +74,16 @@ async function execute(interaction, client) {
     const activeCount = await DrugPlot.countDocuments({ discordId: interaction.user.id, fase: 'creciendo' });
     if (activeCount >= 5) return interaction.reply({ embeds: [E.warn('Límite alcanzado', 'Máximo **5** plantaciones activas a la vez.')], ephemeral: true });
 
+    // Verificar semilla en inventario
+    const inv = await getInventory(interaction.user.id);
+    const seedId = `semilla_${tipo}`;
+    const semilla = inv.items.find(i => i.id === seedId);
+    if (!semilla || semilla.cantidad < 1) {
+      return interaction.reply({ embeds: [E.err('Sin semillas', `Necesitas una **semilla de ${info.nombre}** para plantar. Cómprala en \`/tienda\` (🏴 Mercado Negro).`)], ephemeral: true });
+    }
+    inv.removeItem(seedId, 1);
+    await inv.save();
+
     const now = Date.now();
     const listoEn = new Date(now + info.tiempo);
     const riegos = info.riegos;
@@ -204,21 +214,8 @@ async function execute(interaction, client) {
     const inv = await getInventory(interaction.user.id);
     const drugs = inv.items.filter(i => i.tipo === 'droga');
     if (!drugs.length) return interaction.reply({ embeds: [E.warn('Sin drogas', 'No tienes drogas en el inventario.')], ephemeral: true });
-
-    const totalValor = drugs.reduce((sum, d) => sum + (d.precio || 0) * d.cantidad, 0);
-    const factor = 0.7 + Math.random() * 0.6; // 70%-130%
-    const pago = Math.round(totalValor * factor);
-
-    inv.clearType('droga');
-    player.dineroSucio = (player.dineroSucio || 0) + pago;
-    player.drogasVendidas = (player.drogasVendidas || 0) + drugs.reduce((s, d) => s + d.cantidad, 0);
-    await inv.save();
-    await player.save();
-
-    return interaction.reply({
-      embeds: [new EmbedBuilder().setColor(config.colors.gold).setTitle('💰 Venta realizada')
-        .setDescription(`Has vendido **${drugs.reduce((s, d) => s + d.cantidad, 0)}** unidades por **$${pago.toLocaleString()}** (dinero sucio).\n💡 Usa \`/blanquear\` para limpiar el dinero.`).setTimestamp()],
-    });
+    await interaction.deferReply({ ephemeral: true });
+    return iniciarVenta(interaction, interaction.user, player, inv, client);
   }
 
   if (sub === 'laboratorio') {
@@ -354,22 +351,16 @@ const prefixCommands = [
     },
   },
   {
-    name: 'venderdroga',
-    aliases: ['vender'],
-    description: '!venderdroga — Vender tus drogas',
-    async run(message) {
+    name: 'vender',
+    aliases: ['venderdroga', 'sell'],
+    description: '!vender — Vender tus drogas (requiere vestimenta, vehículo, ubicación)',
+    async run(message, args, client) {
       const player = await getPlayer(message.author.id, message.author.username);
+      if (!player.personajeCreado) return message.reply('❌ No tienes personaje.');
       const inv = await getInventory(message.author.id);
       const drugs = inv.items.filter(i => i.tipo === 'droga');
       if (!drugs.length) return message.reply('❌ No tienes drogas.');
-      const totalValor = drugs.reduce((s, d) => s + (d.precio || 0) * d.cantidad, 0);
-      const factor = 0.7 + Math.random() * 0.6;
-      const pago = Math.round(totalValor * factor);
-      inv.clearType('droga');
-      player.dineroSucio = (player.dineroSucio || 0) + pago;
-      player.drogasVendidas = (player.drogasVendidas || 0) + drugs.reduce((s, d) => s + d.cantidad, 0);
-      await inv.save(); await player.save();
-      message.reply(`💰 Has vendido las drogas por **$${pago.toLocaleString()}** (dinero sucio).`);
+      return iniciarVenta(message, message.author, player, inv, client);
     },
   },
   {
@@ -425,6 +416,140 @@ const prefixCommands = [
     },
   },
 ];
+
+// ─── Sistema de venta con pasos ─────────────────────────────────────────────
+async function iniciarVenta(responder, usuario, player, inv, client) {
+  const drugs = inv.items.filter(i => i.tipo === 'droga');
+  const totalUnids = drugs.reduce((s, d) => s + d.cantidad, 0);
+  if (!totalUnids) return responder.editReply('❌ No tienes drogas.');
+
+  const preguntas = [
+    { q: '👕 **¿Qué vestimenta llevas?** Describe tu ropa para la venta.', key: 'vestimenta' },
+    { q: '🚗 **¿Qué vehículo usas?** Describe marca, modelo, color y matrícula.', key: 'vehiculo' },
+    { q: '📍 **¿Dónde vas a vender?** Indica la ubicación exacta.', key: 'ubicacion' },
+  ];
+  const respuestas = {};
+
+  let canal = responder.channel || responder.channelId;
+  if (typeof canal === 'string') canal = await client.channels.fetch(canal).catch(() => null);
+  if (!canal) return responder.editReply('❌ Error al obtener el canal.');
+
+  const filter = m => m.author.id === usuario.id;
+  let msg = await responder.editReply({ content: preguntas[0].q, ephemeral: true });
+  if (!msg) return;
+
+  for (let i = 0; i < preguntas.length; i++) {
+    if (i > 0) {
+      msg = await responder.editReply({ content: preguntas[i].q });
+    }
+    try {
+      const collected = await msg.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
+      const resp = collected.first().content;
+      respuestas[preguntas[i].key] = resp;
+      if (i < preguntas.length - 1) await collected.first().delete().catch(() => {});
+    } catch {
+      return responder.editReply('❌ Tiempo agotado. Venta cancelada.');
+    }
+  }
+
+  // Procesar la venta
+  const totalValor = drugs.reduce((sum, d) => sum + (d.precio || 0) * d.cantidad, 0);
+  const roll = Math.random();
+
+  if (roll < 0.60) {
+    // ✅ Éxito (60%)
+    const factor = 0.8 + Math.random() * 0.4; // 80%-120%
+    const pago = Math.round(totalValor * factor);
+    inv.clearType('droga');
+    player.dineroSucio = (player.dineroSucio || 0) + pago;
+    player.drogasVendidas = (player.drogasVendidas || 0) + totalUnids;
+    player.addXP(totalUnids * 3);
+    await inv.save(); await player.save();
+    return responder.editReply({
+      embeds: [new EmbedBuilder().setColor(config.colors.success).setTitle('💰 Venta exitosa')
+        .setDescription(
+          `Vendiste **${totalUnids}** unidades por **$${pago.toLocaleString()}** (dinero sucio).\n\n` +
+          `👕 **Vestimenta:** ${respuestas.vestimenta}\n` +
+          `🚗 **Vehículo:** ${respuestas.vehiculo}\n` +
+          `📍 **Ubicación:** ${respuestas.ubicacion}`
+        ).setTimestamp()],
+    });
+  }
+
+  if (roll < 0.85) {
+    // ⚠️ Venta parcial (25%)
+    const factor = 0.3 + Math.random() * 0.2; // 30%-50%
+    const pago = Math.round(totalValor * factor);
+    inv.clearType('droga');
+    player.dineroSucio = (player.dineroSucio || 0) + pago;
+    player.drogasVendidas = (player.drogasVendidas || 0) + totalUnids;
+    await inv.save(); await player.save();
+    return responder.editReply({
+      embeds: [new EmbedBuilder().setColor(config.colors.warning).setTitle('⚠️ Venta parcial')
+        .setDescription(
+          `El comprador te estafó. Solo conseguiste **$${pago.toLocaleString()}** (dinero sucio).\n\n` +
+          `👕 **Vestimenta:** ${respuestas.vestimenta}\n` +
+          `🚗 **Vehículo:** ${respuestas.vehiculo}\n` +
+          `📍 **Ubicación:** ${respuestas.ubicacion}`
+        ).setTimestamp()],
+    });
+  }
+
+  // 🚨 Policía (15%)
+  inv.clearType('droga');
+  player.dineroSucio = (player.dineroSucio || 0) + Math.round(totalValor * 0.1);
+  player.arrestos = (player.arrestos || 0) + 1;
+  await inv.save(); await player.save();
+
+  // Auto 911
+  await enviarAlertaPolicia(responder, usuario, player, respuestas, totalUnids, client);
+
+  return responder.editReply({
+    embeds: [new EmbedBuilder().setColor(config.colors.danger).setTitle('🚨 ¡TE HA CALLADO LA POLICÍA!')
+      .setDescription(
+        `Alguien llamó al **911** durante la transacción.\n` +
+        `Perdiste la mercancía y te llevaste **1 arresto**.\n\n` +
+        `Solo rescataste **$${Math.round(totalValor * 0.1).toLocaleString()}**.\n\n` +
+        `**Datos que tenía la policía:**\n` +
+        `👕 **Vestimenta:** ${respuestas.vestimenta}\n` +
+        `🚗 **Vehículo:** ${respuestas.vehiculo}\n` +
+        `📍 **Ubicación:** ${respuestas.ubicacion}`
+      ).setTimestamp()],
+  });
+}
+
+async function enviarAlertaPolicia(responder, usuario, player, respuestas, totalUnids, client) {
+  try {
+    const guild = responder.guild || (responder.channel?.guild) || (usuario?.lastMessage?.guild);
+    if (!guild) return;
+    const GuildConfig = require('../database/models/GuildConfig');
+    const gc = await GuildConfig.findOne({ guildId: guild.id });
+    const poliChId = gc?.canales?.policia || gc?.canales?.emergencias;
+    if (!poliChId) return;
+    const poliCh = await guild.channels.fetch(poliChId).catch(() => null);
+    if (!poliCh) return;
+
+    const embed = new EmbedBuilder()
+      .setColor(config.colors.danger)
+      .setTitle('🚨 ALERTA POLICIAL — Venta de drogas')
+      .setDescription(
+        `Se ha reportado una **venta de drogas** en curso.\n\n` +
+        `**🧑‍🌾 Sospechoso:** ${usuario.tag} (<@${usuario.id}>)\n` +
+        `**📦 Cantidad:** ${totalUnids} unidades\n` +
+        `**👕 Vestimenta:** ${respuestas.vestimenta}\n` +
+        `**🚗 Vehículo:** ${respuestas.vehiculo}\n` +
+        `**📍 Ubicación:** ${respuestas.ubicacion}\n\n` +
+        `> 🚔 *Se requiere intervención policial inmediata.*`
+      )
+      .setThumbnail(usuario.displayAvatarURL({ dynamic: true }))
+      .setTimestamp()
+      .setFooter({ text: 'AmericanRP · Alerta automática 911' });
+
+    await poliCh.send({ content: '🚨 @here', embeds: [embed] });
+  } catch (e) {
+    console.error('[Drug911]', e.message);
+  }
+}
 
 function ms(ms) {
   const s = Math.floor(ms / 1000);
