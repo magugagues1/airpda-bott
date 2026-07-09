@@ -348,6 +348,58 @@ const prefixCommands = [
       message.reply(`💰 Has vendido las drogas por **$${pago.toLocaleString()}** (dinero sucio).`);
     },
   },
+  {
+    name: 'plantaciones',
+    aliases: ['plots', 'misplantas'],
+    description: '!plantaciones — Ver tus plantaciones activas',
+    async run(message) {
+      const plots = await DrugPlot.find({ discordId: message.author.id }).sort({ plantadoEn: -1 });
+      if (!plots.length) return message.reply('❌ No tienes plantaciones.');
+      const list = await Promise.all(plots.map(async p => {
+        const info = DROGAS[p.tipo];
+        if (!info) return '';
+        const estado = p.fase === 'creciendo' ? '🟡 Creciendo' : p.fase === 'listo' ? '🟢 Listo' : '🔴 Podrido';
+        const riegoStr = p.riegosRealizados < info.riegos ? `💧 ${p.riegosRealizados}/${info.riegos}` : '✅ Riego OK';
+        return `${info.emoji} **${info.nombre}** — ${estado} · ${riegoStr}`;
+      }));
+      message.channel.send(`🌱 **Tus plantaciones:**\n${list.join('\n')}`);
+    },
+  },
+  {
+    name: 'laboratorio',
+    aliases: ['lab'],
+    description: '!laboratorio [montar/procesar] — Gestionar laboratorio',
+    async run(message, args) {
+      if (!args.length) return message.reply('Uso: `!laboratorio montar` o `!laboratorio procesar`');
+      const accion = args[0].toLowerCase();
+      const inv = await getInventory(message.author.id);
+      if (accion === 'montar') {
+        const piezas = ['reactor', 'condensador', 'tubos', 'quimicos'];
+        const tieneTodo = piezas.every(p => inv.items.some(i => i.id === p));
+        if (!tieneTodo) return message.reply('❌ Faltan piezas: reactor, condensador, tubos, químicos.');
+        piezas.forEach(p => inv.removeItem(p));
+        inv.addItem({ id: 'laboratorio', nombre: 'Laboratorio montado', tipo: 'herramienta', emoji: '🔬', precio: 0 });
+        await inv.save();
+        await DrugPlot.updateMany({ discordId: message.author.id }, { conLab: true });
+        return message.reply('✅ Laboratorio montado. Ahora puedes procesar droga pura (+50%).');
+      }
+      if (accion === 'procesar') {
+        const tieneLab = inv.items.some(i => i.id === 'laboratorio');
+        if (!tieneLab) return message.reply('❌ Monta un laboratorio primero con `!laboratorio montar`.');
+        const normales = inv.items.filter(i => i.tipo === 'droga' && !i.id.endsWith('_pura'));
+        if (!normales.length) return message.reply('❌ No tienes drogas para procesar.');
+        let proc = 0;
+        for (const d of normales) {
+          inv.removeItem(d.id, d.cantidad);
+          inv.addItem({ id: `${d.id}_pura`, nombre: `${d.nombre} Pura`, tipo: 'droga', emoji: d.emoji, precio: Math.round((d.precio || 500) * 1.5) });
+          proc += d.cantidad;
+        }
+        await inv.save();
+        return message.reply(`🧪 **${proc}** unidades procesadas. Valor +50%.`);
+      }
+      message.reply('Uso: `!laboratorio montar` o `!laboratorio procesar`');
+    },
+  },
 ];
 
 function ms(ms) {

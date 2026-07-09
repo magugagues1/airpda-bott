@@ -216,6 +216,8 @@ const CATEGORIAS = [
       { cmd: '!plantar [tipo]',       desc: 'Plantar (marihuana/lsd/cocaína/éxtasis/meta/ketamina/heroína/fentanilo)' },
       { cmd: '!cosechar',             desc: 'Cosechar plantas listas' },
       { cmd: '!regar',                desc: 'Regar todas tus plantas' },
+      { cmd: '!plantaciones',         desc: 'Ver tus plantaciones activas' },
+      { cmd: '!laboratorio',          desc: 'Montar/procesar en laboratorio' },
       { cmd: '!venderdroga',          desc: 'Vender drogas del inventario' },
     ],
   },
