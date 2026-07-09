@@ -414,43 +414,81 @@ const prefixCommands = [
       if (!player) return message.reply('❌ Necesitas un personaje. Usa `/personaje crear`.');
 
       const preguntas = [
-        { q: '📞 **OPERADOR 911:** ¿Cuál es tu **nombre completo**?', key: 'nombreCompleto' },
-        { q: '📞 **OPERADOR 911:** ¿Qué **vestimenta** llevas puesta? (ropa, colores, accesorios)', key: 'vestimenta' },
-        { q: '📞 **OPERADOR 911:** ¿Usas algún **vehículo**? Describe marca, modelo, color y matrícula. (responde "ninguno" si no)', key: 'vehiculo' },
-        { q: '📞 **OPERADOR 911:** ¿Llevas **armas** encima? ¿Cuáles? (responde "ninguna" si no)', key: 'armas' },
-        { q: '📞 **OPERADOR 911:** Describe la **emergencia** con detalles.', key: 'notas' },
+        { q: '**¿Cuál es tu nombre completo?**', key: 'nombreCompleto', desc: 'Proporciona tu nombre y apellido para el registro.' },
+        { q: '**¿Qué vestimenta llevas puesta?**', key: 'vestimenta', desc: 'Describe tu ropa, colores y accesorios visibles.' },
+        { q: '**¿Usas algún vehículo?**', key: 'vehiculo', desc: 'Marca, modelo, color y matrícula. Responde "ninguno" si no.' },
+        { q: '**¿Llevas armas encima?**', key: 'armas', desc: 'Enumera qué armas llevas. Responde "ninguna" si no.' },
+        { q: '**Describe la emergencia con detalles.**', key: 'notas', desc: 'Explica qué está pasando, cuántos implicados, etc.' },
       ];
       const respuestas = {};
-      let idx = 0;
-      let msg = await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x3b82f6).setTitle('📞 Llamada al 911').setDescription(preguntas[0].q).setFooter({ text: 'Responde en el chat · 60s para responder' }).setTimestamp()] });
+      let msg = await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x1e3a5f).setTitle('📞 Llamada al 911').setDescription('Conectando con la central de emergencias...').setTimestamp()] });
       await message.delete().catch(() => {});
 
       const filter = m => m.author.id === message.author.id;
+      const cancelBtn = new ButtonBuilder().setCustomId('cancel_911').setLabel('❌ Cancelar llamada').setStyle(ButtonStyle.Danger);
+      const rowCancel = new ActionRowBuilder().addComponents(cancelBtn);
 
       for (let i = 0; i < preguntas.length; i++) {
-        if (i > 0) await msg.edit({ embeds: [new EmbedBuilder().setColor(0x3b82f6).setTitle('📞 Llamada al 911').setDescription(preguntas[i].q).setFooter({ text: `Paso ${i + 1}/${preguntas.length}` }).setTimestamp()] });
+        const stepEmbed = new EmbedBuilder()
+          .setColor(0x1e3a5f)
+          .setTitle(`📞 Operador 911 — Paso ${i + 1}/${preguntas.length}`)
+          .setDescription(
+            `> ${preguntas[i].q}\n\n` +
+            `*${preguntas[i].desc}*\n\n` +
+            `📝 *Escribe tu respuesta en el chat o presiona el botón para cancelar.*`
+          )
+          .setFooter({ text: `⏱️ 60s para responder · ${i + 1}/${preguntas.length}` })
+          .setTimestamp();
+
+        await msg.edit({ embeds: [stepEmbed], components: [rowCancel] });
+
         try {
-          const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
-          const r = collected.first();
+          const result = await Promise.race([
+            message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] }).then(c => ({ type: 'msg', data: c.first() })),
+            msg.awaitMessageComponent({ filter: i => i.user.id === message.author.id && i.customId === 'cancel_911', time: 60000 }).then(() => ({ type: 'cancel' })),
+          ]);
+
+          if (result.type === 'cancel') {
+            await msg.edit({ embeds: [E.warn('Llamada cancelada', 'Has colgado tú mismo la llamada.')], components: [] });
+            setTimeout(() => msg.delete().catch(() => {}), 5000);
+            return;
+          }
+
+          const r = result.data;
           respuestas[preguntas[i].key] = r.content;
           await r.delete().catch(() => {});
         } catch {
-          return msg.edit({ embeds: [E.err('Tiempo agotado', 'La llamada al 911 ha expirado. Cuelga y vuelve a intentar.')] });
+          await msg.edit({ embeds: [E.err('⏱️ Tiempo agotado', 'La llamada al 911 ha expirado por inactividad.')], components: [] });
+          setTimeout(() => msg.delete().catch(() => {}), 5000);
+          return;
         }
       }
 
+      // ─── Resumen de datos ────────────────────────────────────────────────
+      const resumenEmbed = new EmbedBuilder()
+        .setColor(0x22c55e)
+        .setTitle('✅ Datos registrados')
+        .setDescription('Tus datos han sido registrados. Ahora selecciona la zona.')
+        .addFields(
+          Object.entries(respuestas).map(([k, v]) => ({ name: { nombreCompleto: '👤 Nombre', vestimenta: '👕 Vestimenta', vehiculo: '🚗 Vehículo', armas: '🔫 Armas', notas: '📝 Notas' }[k] || k, value: v || '—', inline: true }))
+        )
+        .setTimestamp();
+      await msg.edit({ embeds: [resumenEmbed], components: [] });
+      await new Promise(r => setTimeout(r, 1500));
+
       // ─── Selección de zona ──────────────────────────────────────────────
       const zoneEmbed = new EmbedBuilder()
-        .setColor(0xef4444)
+        .setColor(0xf59e0b)
         .setTitle('📍 Selecciona tu zona')
-        .setDescription('Elige la zona donde te encuentras para enviar el mapa de códigos postales.')
-        .setFooter({ text: 'Selecciona una zona con los botones' })
+        .setDescription('Elige la zona donde te encuentras para ver el mapa de códigos postales.')
+        .setFooter({ text: 'Selecciona una zona con los botones · 30s' })
         .setTimestamp();
 
       const zoneRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('zona_ciudad').setLabel('🏙️ Ciudad').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('zona_gran_ señora').setLabel('🌾 Gran Señora').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('zona_norte').setLabel('🏔️ Norte (Paleto)').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('cancel_911_zona').setLabel('❌ Cancelar').setStyle(ButtonStyle.Danger),
       );
 
       await msg.edit({ embeds: [zoneEmbed], components: [zoneRow] });
@@ -458,10 +496,17 @@ const prefixCommands = [
       let zona;
       try {
         const zonaInt = await msg.awaitMessageComponent({ filter: i => i.user.id === message.author.id, time: 30000 });
+        if (zonaInt.customId === 'cancel_911_zona') {
+          await msg.edit({ embeds: [E.warn('Llamada cancelada', 'Has cancelado la llamada voluntariamente.')], components: [] });
+          setTimeout(() => msg.delete().catch(() => {}), 5000);
+          return;
+        }
         zona = zonaInt.customId.replace('zona_', '');
         await zonaInt.deferUpdate();
       } catch {
-        return msg.edit({ embeds: [E.err('Tiempo agotado', 'No seleccionaste zona. Llamada cancelada.')], components: [] });
+        await msg.edit({ embeds: [E.err('⏱️ Tiempo agotado', 'No seleccionaste zona a tiempo. Llamada cancelada.')], components: [] });
+        setTimeout(() => msg.delete().catch(() => {}), 5000);
+        return;
       }
 
       const zonaNombre = { ciudad: '🏙️ Ciudad', 'gran_ señora': '🌾 Gran Señora', norte: '🏔️ Norte (Paleto)' }[zona] || zona;
