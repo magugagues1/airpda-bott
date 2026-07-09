@@ -275,6 +275,30 @@ async function execute(interaction, client) {
 // ─── Prefix ───────────────────────────────────────────────────────────────────
 const prefixCommands = [
   {
+    name: 'drogas',
+    aliases: ['drugs', 'narcos'],
+    description: '!drogas — Ver estadísticas de narcotráfico',
+    async run(message) {
+      const player = await getPlayer(message.author.id, message.author.username);
+      if (!player.personajeCreado) return message.reply('❌ No tienes personaje.');
+      const total = await DrugPlot.countDocuments({ discordId: message.author.id });
+      const listas = await DrugPlot.countDocuments({ discordId: message.author.id, fase: 'listo' });
+      const inv = await getInventory(message.author.id);
+      const drogasEnInv = inv.items.filter(i => i.tipo === 'droga').length;
+      return message.channel.send({
+        embeds: [new EmbedBuilder().setColor(config.colors.primary).setTitle('📊 Estadísticas de Narcotráfico')
+          .addFields(
+            { name: '🌱 Total plantadas', value: `${total}`, inline: true },
+            { name: '🟢 Listas para cosechar', value: `${listas}`, inline: true },
+            { name: '📦 Drogas en inventario', value: `${drogasEnInv}`, inline: true },
+            { name: '🧹 Dinero sucio', value: formatMoney(player.dineroSucio), inline: true },
+            { name: '🚔 Arrestos', value: `${player.arrestos || 0}`, inline: true },
+            { name: '🏴 Nivel de banda', value: player.gangId ? 'Activo' : 'Sin banda', inline: true },
+          ).setTimestamp()],
+      });
+    },
+  },
+  {
     name: 'plantar',
     aliases: ['cultivar', 'sembrar'],
     description: '!plantar [tipo] — Plantar droga',
