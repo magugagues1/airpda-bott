@@ -2,7 +2,7 @@ const { execSync } = require('child_process');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
-const CHANNEL_ID = '1523771792907436125';
+const CHANNEL_ID = '1480878156213780591';
 
 function run(cmd) {
   return execSync(cmd, { cwd: require('path').join(__dirname, '..'), encoding: 'utf-8' }).trim();
