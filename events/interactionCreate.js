@@ -6,6 +6,12 @@ const EPHEMERAL = { flags: MessageFlags.Ephemeral };
 module.exports = {
   name: 'interactionCreate',
   async execute(client, interaction) {
+    // ─── Canales prohibidos ─────────────────────────────────────────────────
+    const forbiddenChannels = ['1441818964748537987', '1441818964748537988'];
+    if (forbiddenChannels.includes(interaction.channelId) && interaction.isChatInputCommand()) {
+      return interaction.reply({ content: '❌ No puedes ejecutar comandos aquí.', ephemeral: true });
+    }
+
     // ─── Slash Command ──────────────────────────────────────────────────────
     if (interaction.isChatInputCommand()) {
       const cmd = client.commands.get(interaction.commandName);

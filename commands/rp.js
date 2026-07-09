@@ -533,16 +533,10 @@ const prefixCommands = [
 
       let enviado = false;
       try {
-        const gc = await GuildConfig.findOne({ guildId: message.guild.id });
-        const canales = gc?.canales || {};
-        const chId = (servicio === 'policia' ? canales.policia : servicio === 'medico' ? canales.medico : canales.bomberos)
-                   || canales.emergencias || canales.rp;
-        if (chId) {
-          const ch = message.guild.channels.cache.get(chId) || await message.guild.channels.fetch(chId).catch(() => null);
-          if (ch) {
-            await ch.send({ content: '🚨 **@here**', embeds: [alertEmbed], files: alertaMapa ? [alertaMapa] : [] });
-            enviado = true;
-          }
+        const ch = await message.guild.channels.fetch('1441818965218431029').catch(() => null);
+        if (ch) {
+          await ch.send({ content: '🚨 **@here**', embeds: [alertEmbed], files: alertaMapa ? [alertaMapa] : [] });
+          enviado = true;
         }
       } catch (err) {
         console.error('[911]', err.message);

@@ -19,6 +19,9 @@ module.exports = {
   async execute(client, message) {
     if (message.author.bot || !message.guild) return;
 
+    // ─── Canales prohibidos ─────────────────────────────────────────────────
+    if (['1441818964748537987', '1441818964748537988'].includes(message.channelId)) return;
+
     // ─── Sistema de Seguridad ─────────────────────────────────────────────
     await handleSecurity(message);
 
