@@ -20,7 +20,7 @@ module.exports = {
     if (message.author.bot || !message.guild) return;
 
     // ─── Canales prohibidos ─────────────────────────────────────────────────
-    const forbiddenChannels = ['1441818964748537987', '1441818964748537988', '1441818964748537989'];
+    const forbiddenChannels = ['1441818965218431029', '1500230610071982090', '1441818964748537990', '1441818964748537988'];
     if (forbiddenChannels.includes(message.channelId)) {
       if (message.content.startsWith(config.prefix) || message.content.startsWith('/')) {
         await message.delete().catch(() => {});
