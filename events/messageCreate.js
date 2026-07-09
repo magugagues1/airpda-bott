@@ -20,7 +20,30 @@ module.exports = {
     if (message.author.bot || !message.guild) return;
 
     // ─── Canales prohibidos ─────────────────────────────────────────────────
-    if (['1441818964748537987', '1441818964748537988'].includes(message.channelId)) return;
+    const forbiddenChannels = ['1441818964748537987', '1441818964748537988', '1441818964748537989'];
+    if (forbiddenChannels.includes(message.channelId)) {
+      if (message.content.startsWith(config.prefix) || message.content.startsWith('/')) {
+        await message.delete().catch(() => {});
+        // Track infracciones para aislar
+        const key = `forbid_${message.author.id}`;
+        const count = (client.spamTracker?.get(key) || 0) + 1;
+        if (!client.spamTracker) client.spamTracker = new Map();
+        client.spamTracker.set(key, count);
+        setTimeout(() => client.spamTracker.delete(key), 60000);
+
+        const warnMsg = await message.channel.send(`⚠️ <@${message.author.id}> No puedes ejecutar comandos aquí.`);
+        setTimeout(() => warnMsg.delete().catch(() => {}), 5000);
+
+        if (count >= 3) {
+          await message.member?.timeout(5 * 60_000, 'Aislamiento automático: comandos en canal prohibido').catch(() => {});
+          const aislamiento = await message.channel.send(`🔇 <@${message.author.id}> Has sido aislado **5 minutos** por insistir en ejecutar comandos aquí.`);
+          setTimeout(() => aislamiento.delete().catch(() => {}), 8000);
+          client.spamTracker.set(key, 0);
+        }
+        return;
+      }
+      if (message.content.startsWith('/')) return;
+    }
 
     // ─── Sistema de Seguridad ─────────────────────────────────────────────
     await handleSecurity(message);

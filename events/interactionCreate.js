@@ -7,9 +7,25 @@ module.exports = {
   name: 'interactionCreate',
   async execute(client, interaction) {
     // ─── Canales prohibidos ─────────────────────────────────────────────────
-    const forbiddenChannels = ['1441818964748537987', '1441818964748537988'];
+    const forbiddenChannels = ['1441818964748537987', '1441818964748537988', '1441818964748537989'];
     if (forbiddenChannels.includes(interaction.channelId) && interaction.isChatInputCommand()) {
-      return interaction.reply({ content: '❌ No puedes ejecutar comandos aquí.', ephemeral: true });
+      const key = `forbid_${interaction.user.id}`;
+      if (!client.spamTracker) client.spamTracker = new Map();
+      const count = (client.spamTracker.get(key) || 0) + 1;
+      client.spamTracker.set(key, count);
+      setTimeout(() => { if (client.spamTracker.get(key) === count) client.spamTracker.delete(key); }, 60000);
+
+      if (count >= 3) {
+        await interaction.member?.timeout(5 * 60_000, 'Aislamiento: comandos en canal prohibido').catch(() => {});
+        await interaction.reply({ content: `🔇 Has sido aislado **5 minutos** por insistir en ejecutar comandos aquí.`, ephemeral: true });
+        client.spamTracker.set(key, 0);
+      } else {
+        const warnText = count === 1
+          ? '⚠️ No puedes ejecutar comandos aquí.'
+          : `⚠️ Último aviso. Próxima vez serás aislado automáticamente.`;
+        await interaction.reply({ content: warnText, ephemeral: true });
+      }
+      return;
     }
 
     // ─── Slash Command ──────────────────────────────────────────────────────
