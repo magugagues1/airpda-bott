@@ -1,319 +1,362 @@
-/**
- * DROGAS — Sistema de narcotráfico completo
- * Prefix: !plantar, !cosechar, !plantaciones, !laboratorio, !distribuir, !venderdroga
- */
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getPlayer, getInventory, formatCooldown, formatMoney, rand } = require('../utils/helpers');
+'use strict';
+
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { getPlayer, getInventory, rand, formatMoney, calcXpNivel, applyVitalDecay } = require('../utils/helpers');
 const E = require('../utils/embeds');
 const config = require('../config');
 const DROGAS = require('../data/drogas');
-const { ICONS, BANNERS, addImage } = require('../utils/images');
 const DrugPlot = require('../database/models/DrugPlot');
 
+function getTipoInfo(tipo) {
+  return DROGAS[tipo] || null;
+}
+
 // ─── Slash ────────────────────────────────────────────────────────────────────
-const data = new SlashCommandBuilder()
+const data = new (require('discord.js').SlashCommandBuilder)()
   .setName('drogas')
   .setDescription('Sistema de narcotráfico')
-  .addSubcommand(s => s.setName('tipos').setDescription('Ver tipos de drogas disponibles'))
+  .addSubcommand(s => s.setName('tipos').setDescription('Ver todos los tipos de droga disponibles'))
+  .addSubcommand(s => s.setName('plantar').setDescription('Plantar una droga')
+    .addStringOption(o => o.setName('tipo').setDescription('Tipo de droga').setRequired(true)
+      .addChoices(
+        { name: '🌿 Marihuana (Nivel banda 1)', value: 'marihuana' },
+        { name: '🌈 LSD (Nivel banda 1)', value: 'lsd' },
+        { name: '❄️ Cocaína (Nivel banda 2)', value: 'cocaina' },
+        { name: '💎 Éxtasis (Nivel banda 2)', value: 'extasis' },
+        { name: '💊 Metanfetamina (Nivel banda 3)', value: 'metanfetamina' },
+        { name: '🔵 Ketamina (Nivel banda 3)', value: 'ketamina' },
+        { name: '💉 Heroína (Nivel banda 4)', value: 'heroina' },
+        { name: '☠️ Fentanilo (Nivel banda 5)', value: 'fentanilo' },
+      )))
   .addSubcommand(s => s.setName('plantaciones').setDescription('Ver tus plantaciones activas'))
-  .addSubcommand(s => s.setName('estadisticas').setDescription('Ver tus stats del narcotráfico'));
+  .addSubcommand(s => s.setName('regar').setDescription('Regar todas tus plantas'))
+  .addSubcommand(s => s.setName('cosechar').setDescription('Cosechar tus plantas listas'))
+  .addSubcommand(s => s.setName('estadisticas').setDescription('Ver estadísticas de narcotráfico'))
+  .addSubcommand(s => s.setName('vender').setDescription('Vender todas tus drogas')
+    .addIntegerOption(o => o.setName('cantidad').setDescription('Cantidad a vender (opcional)').setRequired(false)))
+  .addSubcommand(s => s.setName('laboratorio').setDescription('Gestionar tu laboratorio')
+    .addStringOption(o => o.setName('accion').setDescription('Acción').setRequired(true)
+      .addChoices(
+        { name: 'Montar laboratorio', value: 'montar' },
+        { name: 'Procesar droga', value: 'procesar' },
+        { name: 'Estado', value: 'estado' },
+      )));
 
-async function execute(interaction) {
+async function execute(interaction, client) {
   const sub = interaction.options.getSubcommand();
   const player = await getPlayer(interaction.user.id, interaction.user.username);
+  if (!player.personajeCreado) return interaction.reply({ embeds: [E.warn('Sin personaje', 'Crea un personaje con /personaje crear.')], ephemeral: true });
 
   if (sub === 'tipos') {
-    const embed = new EmbedBuilder()
-      .setColor(config.colors.purple)
-      .setTitle('💊 Tipos de drogas')
-      .setDescription('Planta con `!plantar [tipo]` en el canal correcto.')
-      .setFooter({ text: 'Mayor riesgo = mayor valor pero más probabilidad de ser detectado' });
-    addImage(embed, 'drogas');
+    const desc = Object.entries(DROGAS).map(([k, v]) =>
+      `${v.emoji} **${v.nombre}** — ⏱ ${ms(v.tiempo)} · 💰 $${v.valorBase} · ⚠️ ${Math.round(v.riesgo * 100)}% confiscación · 💧 ${v.riegos} riegos · 🏴 Nivel banda ${v.nivelBanda}`
+    ).join('\n');
+    return interaction.reply({
+      embeds: [new EmbedBuilder().setColor(config.colors.primary).setTitle('💊 Tipos de Droga')
+        .setDescription(desc).setFooter({ text: 'Usa /drogas plantar [tipo] para comenzar' }).setTimestamp()],
+      ephemeral: true,
+    });
+  }
 
-    for (const [key, d] of Object.entries(DROGAS)) {
-      const tiempo = Math.floor(d.tiempo / 60000);
-      embed.addFields({
-        name: `${d.nombre}`,
-        value: `⏱️ Tiempo: ${tiempo} min\n💰 Valor: ${formatMoney(d.valorBase)}/unidad\n⚠️ Riesgo: ${Math.floor(d.riesgo * 100)}%\nComando: \`!plantar ${key}\``,
-        inline: true,
-      });
+  if (sub === 'plantar') {
+    const tipo = interaction.options.getString('tipo');
+    const info = getTipoInfo(tipo);
+    if (!info) return interaction.reply({ embeds: [E.err('Error', 'Tipo de droga inválido.')], ephemeral: true });
+
+    // Verificar nivel de banda
+    const Gang = require('../database/models/Gang');
+    const ganga = player.gangId ? await Gang.findById(player.gangId).catch(() => null) : null;
+    const nivelBanda = ganga?.nivel || 0;
+    if (nivelBanda < info.nivelBanda) {
+      return interaction.reply({ embeds: [E.err('Nivel de banda insuficiente', `Necesitas nivel de banda **${info.nivelBanda}** para plantar ${info.nombre}. Tu banda tiene nivel **${nivelBanda}**.`)], ephemeral: true });
     }
-    return interaction.reply({ embeds: [embed] });
+
+    const activeCount = await DrugPlot.countDocuments({ discordId: interaction.user.id, fase: 'creciendo' });
+    if (activeCount >= 5) return interaction.reply({ embeds: [E.warn('Límite alcanzado', 'Máximo **5** plantaciones activas a la vez.')], ephemeral: true });
+
+    const now = Date.now();
+    const listoEn = new Date(now + info.tiempo);
+    const riegos = info.riegos;
+    const riegoInt = info.riegoInterval;
+    const tienePaneles = player.inventario?.items?.some(i => i.id === 'panel_luz') || false;
+
+    await DrugPlot.create({
+      discordId: interaction.user.id, guildId: interaction.guildId, tipo,
+      listoEn, riegosNecesarios: riegos,
+      conPaneles: tienePaneles,
+      conLuz: tienePaneles,
+    });
+
+    const totalTime = info.tiempo;
+    const riegoText = tienePaneles
+      ? `💡 Paneles de luz detectados — crecimiento óptimo`
+      : `💧 Necesita ${riegos} riegos cada ${ms(riegoInt)}`;
+
+    return interaction.reply({
+      embeds: [new EmbedBuilder().setColor(config.colors.success)
+        .setTitle(`${info.emoji} ${info.nombre} plantada`)
+        .setDescription(
+          `**${info.nombre}** plantada con éxito.\n\n` +
+          `⏱ **Tiempo total:** ${ms(totalTime)}\n` +
+          `💰 **Valor base:** $${info.valorBase}\n` +
+          `${riegoText}\n` +
+          `📅 **Lista en:** <t:${Math.floor(listoEn.getTime() / 1000)}:R>`
+        ).setTimestamp()],
+    });
   }
 
   if (sub === 'plantaciones') {
-    const plots = await DrugPlot.find({ plantadorId: interaction.user.id, fase: { $ne: 'podrido' } });
-    if (!plots.length) return interaction.reply({ embeds: [E.info('Sin plantaciones', 'No tienes plantaciones activas.\nUsa `!plantar [tipo]` para comenzar.')] });
+    const plots = await DrugPlot.find({ discordId: interaction.user.id }).sort({ plantadoEn: -1 });
+    if (!plots.length) return interaction.reply({ embeds: [E.warn('Sin plantaciones', 'No tienes plantaciones activas.')], ephemeral: true });
 
-    const embed = new EmbedBuilder()
-      .setColor(config.colors.purple)
-      .setTitle('🌿 Tus plantaciones')
-      .setTimestamp();
+    const list = await Promise.all(plots.map(async p => {
+      const info = getTipoInfo(p.tipo);
+      if (!info) return '';
+      const estado = p.fase === 'creciendo' ? '🟡 Creciendo' : p.fase === 'listo' ? '🟢 Listo' : '🔴 Podrido';
+      const faltaRiego = p.fase === 'creciendo' && p.riegosRealizados < p.riegosNecesarios;
+      const riegoStr = faltaRiego ? `💧 ${p.riegosRealizados}/${p.riegosNecesarios} riegos` : '✅ Riego completo';
+      return `${info.emoji} **${info.nombre}** x${p.cantidad} — ${estado} · ${riegoStr}\n📅 ${p.listoEn ? `<t:${Math.floor(p.listoEn.getTime() / 1000)}:R>` : '—'}`;
+    }));
+    return interaction.reply({
+      embeds: [new EmbedBuilder().setColor(config.colors.primary).setTitle('🌱 Tus Plantaciones')
+        .setDescription(list.join('\n\n') || '*Sin plantaciones*').setFooter({ text: `Total: ${plots.length} plantaciones` }).setTimestamp()],
+      ephemeral: true,
+    });
+  }
 
+  if (sub === 'regar') {
+    const plots = await DrugPlot.find({ discordId: interaction.user.id, fase: 'creciendo', riegosRealizados: { $lt: 10 } });
+    if (!plots.length) return interaction.reply({ embeds: [E.warn('Sin plantas', 'No tienes plantas que necesiten riego.')], ephemeral: true });
+
+    let regadas = 0;
     for (const p of plots) {
-      const cd = DROGAS[p.tipo];
-      const now = Date.now();
-      const icon = p.fase === 'listo' ? '✅' : p.fase === 'podrido' ? '💀' : '🌱';
-      let estado;
-      if (p.fase === 'creciendo') {
-        const restante = p.listoEn.getTime() - now;
-        estado = restante > 0 ? `Listo en ${formatCooldown(restante)}` : 'Lista para cosechar';
-      } else if (p.fase === 'listo') {
-        estado = '✅ ¡Lista para cosechar!';
-      } else {
-        estado = '💀 Podrida';
+      const info = getTipoInfo(p.tipo);
+      if (!info) continue;
+      if (p.riegosRealizados < info.riegos) {
+        p.riegosRealizados += 1;
+        p.ultimoRiego = new Date();
+        await p.save();
+        regadas++;
       }
-      embed.addFields({ name: `${icon} ${cd?.nombre || p.tipo} (ID: ${p._id.toString().slice(-6)})`, value: estado, inline: true });
+    }
+    return interaction.reply({ content: `💧 **${regadas}** plantas regadas correctamente.`, ephemeral: true });
+  }
+
+  if (sub === 'cosechar') {
+    const ready = await DrugPlot.find({ discordId: interaction.user.id, fase: 'listo' });
+    if (!ready.length) return interaction.reply({ embeds: [E.warn('Sin cosecha', 'No tienes plantas listas para cosechar. Usa /drogas plantaciones para ver el estado.')], ephemeral: true });
+
+    let total = 0;
+    let perdidas = 0;
+    const inv = await getInventory(interaction.user.id);
+
+    for (const p of ready) {
+      const info = getTipoInfo(p.tipo);
+      if (!info) continue;
+      if (Math.random() < info.riesgo) {
+        perdidas++;
+        player.arrestos = (player.arrestos || 0) + 1;
+      } else {
+        const id = p.conLab ? `${p.tipo}_pura` : p.tipo;
+        const nombre = p.conLab ? `${info.nombre} Pura` : info.nombre;
+        inv.addItem({ id, nombre, tipo: 'droga', emoji: info.emoji, precio: info.valorBase });
+        total += p.cantidad;
+      }
+      p.fase = 'podrido';
+      await p.save();
+    }
+    await inv.save();
+    await player.save();
+
+    const msg = `✅ Cosechadas **${total}** unidades.${perdidas ? `\n🚔 La policía confiscó **${perdidas}** plantaciones (+${perdidas} arrestos).` : ''}`;
+    // Dar XP
+    if (total > 0) {
+      player.addXP(total * 5);
+      await player.save();
     }
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.reply({
+      embeds: [new EmbedBuilder().setColor(config.colors.success).setTitle('🌾 Cosecha completada')
+        .setDescription(msg).setFooter({ text: `XP ganada: ${total * 5}` }).setTimestamp()],
+    });
   }
 
   if (sub === 'estadisticas') {
-    const plots = await DrugPlot.find({ plantadorId: interaction.user.id });
+    const total = await DrugPlot.countDocuments({ discordId: interaction.user.id });
+    const listas = await DrugPlot.countDocuments({ discordId: interaction.user.id, fase: 'listo' });
     const inv = await getInventory(interaction.user.id);
-    const drugsInInv = inv.items.filter(i => i.tipo === 'droga');
+    const drogasEnInv = inv.items.filter(i => i.tipo === 'droga').length;
+    return interaction.reply({
+      embeds: [new EmbedBuilder().setColor(config.colors.primary).setTitle('📊 Estadísticas de Narcotráfico')
+        .addFields(
+          { name: '🌱 Total plantadas', value: `${total}`, inline: true },
+          { name: '🟢 Listas para cosechar', value: `${listas}`, inline: true },
+          { name: '📦 Drogas en inventario', value: `${drogasEnInv}`, inline: true },
+          { name: '🧹 Dinero sucio', value: formatMoney(player.dineroSucio), inline: true },
+          { name: '🚔 Arrestos', value: `${player.arrestos || 0}`, inline: true },
+          { name: '🏴 Nivel de banda', value: `${player.gangId ? 'Activo' : 'Sin banda'}`, inline: true },
+        ).setTimestamp()],
+      ephemeral: true,
+    });
+  }
 
-    const embed = new EmbedBuilder()
-      .setColor(config.colors.purple)
-      .setTitle(`📊 Stats de narcotráfico de ${player.personajeCreado ? player.getFullName() : interaction.user.username}`)
-      .addFields(
-        { name: '🌿 Total plantaciones', value: `${plots.length}`, inline: true },
-        { name: '✅ Cosechadas (activas listas)', value: `${plots.filter(p => p.fase === 'listo').length}`, inline: true },
-        { name: '💊 Drogas en inventario', value: drugsInInv.map(i => `${i.nombre} x${i.cantidad}`).join(', ') || 'Ninguna', inline: false },
-        { name: '💰 Dinero sucio acumulado', value: formatMoney(player.dineroSucio || 0), inline: true },
-      )
-      .setTimestamp();
-    return interaction.reply({ embeds: [embed] });
+  if (sub === 'vender') {
+    const inv = await getInventory(interaction.user.id);
+    const drugs = inv.items.filter(i => i.tipo === 'droga');
+    if (!drugs.length) return interaction.reply({ embeds: [E.warn('Sin drogas', 'No tienes drogas en el inventario.')], ephemeral: true });
+
+    const totalValor = drugs.reduce((sum, d) => sum + (d.precio || 0) * d.cantidad, 0);
+    const factor = 0.7 + Math.random() * 0.6; // 70%-130%
+    const pago = Math.round(totalValor * factor);
+
+    inv.clearType('droga');
+    player.dineroSucio = (player.dineroSucio || 0) + pago;
+    player.drogasVendidas = (player.drogasVendidas || 0) + drugs.reduce((s, d) => s + d.cantidad, 0);
+    await inv.save();
+    await player.save();
+
+    return interaction.reply({
+      embeds: [new EmbedBuilder().setColor(config.colors.gold).setTitle('💰 Venta realizada')
+        .setDescription(`Has vendido **${drugs.reduce((s, d) => s + d.cantidad, 0)}** unidades por **$${pago.toLocaleString()}** (dinero sucio).\n💡 Usa \`/blanquear\` para limpiar el dinero.`).setTimestamp()],
+    });
+  }
+
+  if (sub === 'laboratorio') {
+    const accion = interaction.options.getString('accion');
+    const inv = await getInventory(interaction.user.id);
+
+    if (accion === 'estado') {
+      const tieneLab = inv.items.some(i => i.id === 'laboratorio');
+      const piezas = ['reactor', 'condensador', 'tubos', 'quimicos'];
+      const tienePiezas = piezas.map(p => ({ id: p, tiene: inv.items.some(i => i.id === p) }));
+      return interaction.reply({
+        embeds: [new EmbedBuilder().setColor(config.colors.primary).setTitle('🔬 Laboratorio')
+          .setDescription(
+            `**Estado:** ${tieneLab ? '✅ Montado' : '❌ No montado'}\n\n` +
+            `**Piezas necesarias:**\n` +
+            tienePiezas.map(p => `${p.tiene ? '✅' : '❌'} ${p.id}`).join('\n') +
+            `\n\nUsa \`/drogas laboratorio montar\` si tienes todas las piezas.`
+          ).setTimestamp()],
+        ephemeral: true,
+      });
+    }
+
+    if (accion === 'montar') {
+      const piezas = ['reactor', 'condensador', 'tubos', 'quimicos'];
+      const tieneTodo = piezas.every(p => inv.items.some(i => i.id === p));
+      if (!tieneTodo) return interaction.reply({ embeds: [E.err('Faltan piezas', 'Necesitas: reactor, condensador, tubos de ensayo y químicos. Cómpralos en la tienda.')], ephemeral: true });
+      piezas.forEach(p => inv.removeItem(p));
+      inv.addItem({ id: 'laboratorio', nombre: 'Laboratorio montado', tipo: 'herramienta', emoji: '🔬', precio: 0 });
+      await inv.save();
+      // Marcar todas las plantaciones activas con conLab
+      await DrugPlot.updateMany({ discordId: interaction.user.id }, { conLab: true });
+      return interaction.reply({ embeds: [E.ok('🔬 Laboratorio montado', 'Todas tus nuevas plantaciones podrán procesarse en laboratorio para obtener droga pura (+50% valor).')], ephemeral: true });
+    }
+
+    if (accion === 'procesar') {
+      const tieneLab = inv.items.some(i => i.id === 'laboratorio');
+      if (!tieneLab) return interaction.reply({ embeds: [E.err('Sin laboratorio', 'Necesitas montar un laboratorio primero con /drogas laboratorio montar.')], ephemeral: true });
+      const normales = inv.items.filter(i => i.tipo === 'droga' && !i.id.endsWith('_pura'));
+      if (!normales.length) return interaction.reply({ embeds: [E.warn('Sin drogas', 'No tienes drogas para procesar.')], ephemeral: true });
+      let procesadas = 0;
+      for (const d of normales) {
+        inv.removeItem(d.id, d.cantidad);
+        const puraId = `${d.id}_pura`;
+        const puraNombre = `${d.nombre} Pura`;
+        inv.addItem({ id: puraId, nombre: puraNombre, tipo: 'droga', emoji: d.emoji, precio: Math.round((d.precio || 500) * 1.5) });
+        procesadas += d.cantidad;
+      }
+      await inv.save();
+      return interaction.reply({ embeds: [E.ok('🧪 Procesadas', `**${procesadas}** unidades procesadas en laboratorio. Valor aumentado un **50%**.`)], ephemeral: true });
+    }
   }
 }
 
-// ─── Prefix commands ───────────────────────────────────────────────────────────
+// ─── Prefix ───────────────────────────────────────────────────────────────────
 const prefixCommands = [
-  // !plantar [tipo]
   {
     name: 'plantar',
-    aliases: ['plant', 'sembrar'],
-    description: '!plantar [marihuana|cocaina|metanfetamina|heroina] — Plantar droga',
-    cooldown: 5 * 60 * 1000, // 5 min entre plantaciones
+    aliases: ['cultivar', 'sembrar'],
+    description: '!plantar [tipo] — Plantar droga',
     async run(message, args) {
+      if (!args.length) return message.reply('Uso: `!plantar [marihuana|cocaina|metanfetamina|heroina|lsd|extasis|ketamina|fentanilo]`');
+      const tipo = args[0].toLowerCase();
+      if (!DROGAS[tipo]) return message.reply('❌ Droga inválida. Usa `!drogas tipos` para ver las disponibles.');
       const player = await getPlayer(message.author.id, message.author.username);
-      if (!player.personajeCreado) return message.reply('Sin personaje. Usa `/personaje crear`.');
-
-      const tipo = args[0]?.toLowerCase();
-      if (!tipo || !DROGAS[tipo]) {
-        return message.reply(`❌ Tipo inválido. Tipos: ${Object.keys(DROGAS).join(', ')}\nEjemplo: \`!plantar marihuana\``);
-      }
-
-      // Límite de plantaciones activas (máx 5)
-      const activas = await DrugPlot.countDocuments({ plantadorId: message.author.id, fase: 'creciendo' });
-      if (activas >= 5) return message.reply('❌ Ya tienes 5 plantaciones activas. Cosecha alguna primero.');
-
-      const drugConfig = DROGAS[tipo];
+      if (!player.personajeCreado) return message.reply('❌ No tienes personaje.');
+      const activeCount = await DrugPlot.countDocuments({ discordId: message.author.id, fase: 'creciendo' });
+      if (activeCount >= 5) return message.reply('❌ Máximo 5 plantaciones activas.');
+      const info = DROGAS[tipo];
       const now = Date.now();
-      const listoEn = new Date(now + drugConfig.tiempo);
-      const podridoEn = new Date(now + drugConfig.tiempo * 2);
-
-      const plot = await DrugPlot.create({
-        plantadorId: message.author.id,
-        tipo,
-        fase: 'creciendo',
-        listoEn,
-        podridoEn,
-      });
-
-      const tiempoMin = Math.floor(drugConfig.tiempo / 60000);
-      const embed = new EmbedBuilder()
-        .setColor(config.colors.purple)
-        .setTitle('🌱 Plantación iniciada')
-        .addFields(
-          { name: 'Tipo', value: drugConfig.nombre, inline: true },
-          { name: 'Lista en', value: `${tiempoMin} minutos`, inline: true },
-          { name: 'Valor potencial', value: formatMoney(drugConfig.valorBase * rand(3, 8)), inline: true },
-          { name: 'ID', value: plot._id.toString().slice(-6), inline: true },
-        )
-        .setFooter({ text: 'Te avisaré por DM cuando esté lista · !cosechar para recogerla' })
-        .setTimestamp();
-
-      return message.reply({ embeds: [embed] });
+      await DrugPlot.create({ discordId: message.author.id, guildId: message.guildId, tipo, listoEn: new Date(now + info.tiempo) });
+      return message.reply(`${info.emoji} Has plantado **${info.nombre}**. Estará lista <t:${Math.floor((now + info.tiempo) / 1000)}:R>.`);
     },
   },
-
-  // !cosechar — Cosechar plantaciones listas
   {
     name: 'cosechar',
-    aliases: ['harvest', 'recoger'],
-    description: '!cosechar — Cosechar tus plantaciones listas',
-    async run(message, args) {
-      const player = await getPlayer(message.author.id, message.author.username);
-      if (!player.personajeCreado) return message.reply('Sin personaje.');
-
-      const inv = await getInventory(message.author.id);
-      const plots = await DrugPlot.find({ plantadorId: message.author.id, fase: 'listo' });
-
-      if (!plots.length) {
-        const creciendo = await DrugPlot.countDocuments({ plantadorId: message.author.id, fase: 'creciendo' });
-        if (creciendo > 0) return message.reply(`⏳ Tienes **${creciendo}** plantaciones creciendo. Todavía no están listas.`);
-        return message.reply('❌ No tienes plantaciones listas para cosechar.');
-      }
-
-      let totalDrogas = 0;
-      let totalValor = 0;
-      const detalles = [];
-
-      for (const plot of plots) {
-        const d = DROGAS[plot.tipo];
-        // Riesgo de incautación policial
-        if (Math.random() < d.riesgo) {
-          await DrugPlot.deleteOne({ _id: plot._id });
-          detalles.push(`❌ **${d.nombre}** — INCAUTADA por la policía`);
-          player.arrestos++; // Registro
-          continue;
-        }
-        const cantidad = rand(3, 8);
-        inv.addItem({ nombre: d.nombre, tipo: 'droga', emoji: '💊', precio: d.valorBase, cantidad });
-        totalDrogas += cantidad;
-        totalValor += cantidad * d.valorBase;
-        detalles.push(`✅ **${d.nombre}** x${cantidad} (+${formatMoney(cantidad * d.valorBase)})`);
-        await DrugPlot.deleteOne({ _id: plot._id });
-      }
-
-      await inv.save();
-      await player.save();
-      await player.addXP(rand(30, 80), player);
-
-      const embed = new EmbedBuilder()
-        .setColor(config.colors.purple)
-        .setTitle('🌿 Cosecha completada')
-        .setDescription(detalles.join('\n'))
-        .addFields(
-          { name: '💊 Total cosechado', value: `${totalDrogas} unidades`, inline: true },
-          { name: '💰 Valor total', value: formatMoney(totalValor), inline: true },
-        )
-        .setFooter({ text: 'Usa !venderdroga para vender' })
-        .setTimestamp();
-
-      return message.reply({ embeds: [embed] });
-    },
-  },
-
-  // !plantaciones — Ver plantaciones activas
-  {
-    name: 'plantaciones',
-    aliases: ['misplantas', 'cultivos'],
-    description: '!plantaciones — Ver tus plantaciones activas',
+    aliases: ['recolectar', 'cosecha'],
+    description: '!cosechar — Cosechar plantas listas',
     async run(message) {
-      const plots = await DrugPlot.find({ plantadorId: message.author.id, fase: { $ne: 'podrido' } });
-      if (!plots.length) return message.reply('No tienes plantaciones activas.');
-
-      const embed = new EmbedBuilder()
-        .setColor(config.colors.purple)
-        .setTitle('🌿 Tus plantaciones activas')
-        .setTimestamp();
-
-      for (const p of plots) {
-        const d = DROGAS[p.tipo];
-        const now = Date.now();
-        let estado;
-        if (p.fase === 'creciendo') {
-          const restante = p.listoEn.getTime() - now;
-          estado = restante > 0 ? `⏱️ Lista en ${formatCooldown(restante)}` : '✅ Lista para cosechar';
-        } else {
-          estado = '✅ Lista — usa `!cosechar`';
-        }
-        embed.addFields({ name: `🌱 ${d?.nombre || p.tipo}`, value: estado, inline: true });
+      const player = await getPlayer(message.author.id, message.author.username);
+      const ready = await DrugPlot.find({ discordId: message.author.id, fase: 'listo' });
+      if (!ready.length) return message.reply('❌ No tienes plantas listas.');
+      let total = 0, perdidas = 0;
+      const inv = await getInventory(message.author.id);
+      for (const p of ready) {
+        const info = DROGAS[p.tipo];
+        if (!info) continue;
+        if (Math.random() < info.riesgo) { perdidas++; player.arrestos++; }
+        else { inv.addItem({ id: p.tipo, nombre: info.nombre, tipo: 'droga', emoji: info.emoji, precio: info.valorBase }); total++; }
+        p.fase = 'podrido'; await p.save();
       }
-
-      return message.reply({ embeds: [embed] });
+      await inv.save(); await player.save();
+      message.reply(`✅ Cosechadas **${total}** unidades.${perdidas ? ` 🚔 ${perdidas} confiscadas.` : ''}`);
     },
   },
-
-  // !venderdroga — Vender drogas del inventario
+  {
+    name: 'regar',
+    aliases: ['water', 'riego'],
+    description: '!regar — Regar todas tus plantas',
+    async run(message) {
+      const plots = await DrugPlot.find({ discordId: message.author.id, fase: 'creciendo' });
+      if (!plots.length) return message.reply('❌ No tienes plantas para regar.');
+      let regadas = 0;
+      for (const p of plots) {
+        const info = DROGAS[p.tipo];
+        if (!info) continue;
+        if (p.riegosRealizados < info.riegos) { p.riegosRealizados++; p.ultimoRiego = new Date(); await p.save(); regadas++; }
+      }
+      message.reply(`💧 **${regadas}** plantas regadas.`);
+    },
+  },
   {
     name: 'venderdroga',
-    aliases: ['deal', 'trafico', 'vender-droga'],
-    cooldown: config.cooldowns.trafico,
-    description: '!venderdroga — Vender drogas al mercado negro',
-    async run(message, args) {
+    aliases: ['vender'],
+    description: '!venderdroga — Vender tus drogas',
+    async run(message) {
       const player = await getPlayer(message.author.id, message.author.username);
-      if (!player.personajeCreado) return message.reply('Sin personaje.');
-
       const inv = await getInventory(message.author.id);
-      const drogas = inv.items.filter(i => i.tipo === 'droga');
-
-      if (!drogas.length) return message.reply('❌ No tienes drogas en el inventario.');
-
-      // Vender todas las drogas
-      let total = 0;
-      const detalles = [];
-
-      for (const item of drogas) {
-        // Factor de precio variable (mercado negro)
-        const factor = 0.7 + Math.random() * 0.6; // 70%-130% del precio base
-        const precio = Math.floor(item.precio * factor * item.cantidad);
-        total += precio;
-        detalles.push(`💊 **${item.nombre}** x${item.cantidad} → ${formatMoney(precio)}`);
-        inv.removeItem(item.nombre, item.cantidad);
-      }
-
-      player.dineroSucio += total;
-      player.robosRealizados++;
-      await inv.save();
-      await player.save();
-      await player.addXP(rand(50, 120), player);
-
-      const embed = new EmbedBuilder()
-        .setColor(config.colors.purple)
-        .setTitle('💊 Trato cerrado')
-        .setDescription(detalles.join('\n'))
-        .addFields(
-          { name: '💰 Total obtenido', value: formatMoney(total), inline: true },
-          { name: '🧹 Tipo', value: 'Dinero sucio (blanquea con `/blanquear`)', inline: true },
-        )
-        .setFooter({ text: '⚠️ Actividad ilegal — alto riesgo' })
-        .setTimestamp();
-
-      return message.reply({ embeds: [embed] });
-    },
-  },
-
-  // !laboratorio [tipo] — Procesar drogas (mejora valor)
-  {
-    name: 'laboratorio',
-    aliases: ['lab', 'procesar'],
-    cooldown: 2 * 60 * 60 * 1000, // 2 horas
-    description: '!laboratorio [tipo] — Procesar drogas en el laboratorio (mayor valor)',
-    async run(message, args) {
-      const player = await getPlayer(message.author.id, message.author.username);
-      if (!player.personajeCreado) return message.reply('Sin personaje.');
-
-      const inv = await getInventory(message.author.id);
-      const tipo = args[0]?.toLowerCase();
-      const drogas = tipo
-        ? inv.items.filter(i => i.tipo === 'droga' && i.nombre.toLowerCase().includes(tipo))
-        : inv.items.filter(i => i.tipo === 'droga');
-
-      if (!drogas.length) return message.reply('❌ No tienes drogas para procesar.');
-
-      // Requiere componentes químicos (o simplemente mejora el precio)
-      let procesadas = 0;
-      for (const item of drogas) {
-        item.precio = Math.floor(item.precio * 1.5); // +50% valor al procesar
-        item.nombre = `${item.nombre} (pura)`;
-        procesadas += item.cantidad;
-      }
-
-      await inv.save();
-
-      return message.reply({
-        embeds: [new EmbedBuilder()
-          .setColor(config.colors.purple)
-          .setTitle('🧪 Laboratorio completado')
-          .setDescription(`Procesaste **${procesadas}** unidades de droga.\n+50% valor en el mercado negro.`)
-          .setTimestamp()],
-      });
+      const drugs = inv.items.filter(i => i.tipo === 'droga');
+      if (!drugs.length) return message.reply('❌ No tienes drogas.');
+      const totalValor = drugs.reduce((s, d) => s + (d.precio || 0) * d.cantidad, 0);
+      const factor = 0.7 + Math.random() * 0.6;
+      const pago = Math.round(totalValor * factor);
+      inv.clearType('droga');
+      player.dineroSucio = (player.dineroSucio || 0) + pago;
+      player.drogasVendidas = (player.drogasVendidas || 0) + drugs.reduce((s, d) => s + d.cantidad, 0);
+      await inv.save(); await player.save();
+      message.reply(`💰 Has vendido las drogas por **$${pago.toLocaleString()}** (dinero sucio).`);
     },
   },
 ];
+
+function ms(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}h ${m % 60}m`;
+  if (m > 0) return `${m}m`;
+  return `${s}s`;
+}
 
 module.exports = { data, execute, prefixCommands };

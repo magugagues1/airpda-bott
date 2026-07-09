@@ -143,6 +143,22 @@ const CATALOGO = {
       { id: 'inm_alarma',   nombre: 'Inmovilizador/alarma', precio: 1200, emoji: '🔒', tipo: 'herramienta', equipable: true, desc: 'Sistema antirrobo para vehículo RP' },
     ],
   },
+
+  ilegal: {
+    emoji: '🏴', label: 'Mercado Negro',
+    descripcion: '⚠️ Artículos ilegales · Requieren nivel de banda',
+    items: [
+      { id: 'panel_luz',    nombre: 'Panel de luz UV',      precio: 2500, emoji: '💡', tipo: 'herramienta', nivelBanda: 2, desc: 'Acelera crecimiento de plantas' },
+      { id: 'reactor',      nombre: 'Reactor químico',       precio: 3000, emoji: '⚗️', tipo: 'pieza_lab',   nivelBanda: 3, desc: 'Pieza de laboratorio' },
+      { id: 'condensador',  nombre: 'Condensador',           precio: 2500, emoji: '🌀', tipo: 'pieza_lab',   nivelBanda: 3, desc: 'Pieza de laboratorio' },
+      { id: 'tubos',        nombre: 'Tubos de ensayo',       precio: 1500, emoji: '🧪', tipo: 'pieza_lab',   nivelBanda: 3, desc: 'Pieza de laboratorio' },
+      { id: 'quimicos',     nombre: 'Químicos precursores',  precio: 4000, emoji: '🧬', tipo: 'pieza_lab',   nivelBanda: 3, desc: 'Pieza de laboratorio' },
+      { id: 'kit_silenciador', nombre: 'Kit de silenciador', precio: 5000, emoji: '🔇', tipo: 'arma_mod',    nivelBanda: 4, desc: 'Silenciador para armas cortas' },
+      { id: 'pistola_ilegal', nombre: 'Pistola sin serie',   precio: 8000, emoji: '🔫', tipo: 'arma', equipable: true, nivelBanda: 4, desc: 'Ilegal · Sin registro · No requiere permiso' },
+      { id: 'subfusil',     nombre: 'Subfusil artesanal',    precio: 15000, emoji: '🪖', tipo: 'arma', equipable: true, nivelBanda: 5, desc: 'Ilegal · Arma automática' },
+      { id: 'chaleco_mejorado', nombre: 'Chaleco blindado +', precio: 3500, emoji: '🛡️', tipo: 'armadura', equipable: true, efecto: { proteccion: 50 }, nivelBanda: 4, desc: '-50% daño · Ilegal' },
+    ],
+  },
 };
 
 const CATS = Object.keys(CATALOGO);
@@ -284,6 +300,19 @@ async function execute(interaction, client) {
         embeds: [E.err('Item no encontrado', `No existe **"${nombreInput}"** en la tienda.\nUsa \`/tienda\` para ver el catálogo completo.`)],
         ephemeral: true,
       });
+    }
+
+    // Verificar nivel de banda para items ilegales
+    if (item.nivelBanda) {
+      const Gang = require('../database/models/Gang');
+      const ganga = player.gangId ? await Gang.findById(player.gangId).catch(() => null) : null;
+      const nivelBanda = ganga?.nivel || 0;
+      if (nivelBanda < item.nivelBanda) {
+        return interaction.reply({
+          embeds: [E.err('Nivel de banda insuficiente', `**${item.nombre}** requiere nivel de banda **${item.nivelBanda}**. Tu banda tiene nivel **${nivelBanda}**.`)],
+          ephemeral: true,
+        });
+      }
     }
 
     const total = item.precio * cantidad;

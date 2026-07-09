@@ -163,20 +163,40 @@ setInterval(processCommandQueue, 3000);
 cron.schedule('*/5 * * * *', async () => {
   try {
     const DrugPlot = require('./database/models/DrugPlot');
+    const DrugData = require('./data/drogas');
     const now = new Date();
 
-    // Plantaciones listas
+    // Verificar riego — plantas sin regar se pudren
+    const growing = await DrugPlot.find({ fase: 'creciendo' });
+    for (const plot of growing) {
+      const info = DrugData[plot.tipo];
+      if (!info) continue;
+      const tiempoSinRiego = now - plot.ultimoRiego;
+      const riegoInterval = plot.conPaneles ? info.riegoInterval * 1.5 : info.riegoInterval;
+      if (tiempoSinRiego > riegoInterval * 2) {
+        plot.fase = 'podrido';
+        await plot.save();
+        try {
+          const user = await client.users.fetch(plot.discordId);
+          await user.send(`💀 **Tu plantación de ${info.nombre} se ha podrido** por falta de riego.`);
+        } catch {}
+      }
+    }
+
+    // Plantaciones listas para cosechar
     const ready = await DrugPlot.find({ fase: 'creciendo', listoEn: { $lte: now } });
     for (const plot of ready) {
       plot.fase = 'listo';
+      plot.podridoEn = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2h para cosechar
       await plot.save();
       try {
-        const user = await client.users.fetch(plot.plantadorId);
-        await user.send(`🌿 **Tu plantación de ${plot.tipo} está lista para cosechar!**\nUsa \`!cosechar\` para recoger tu cosecha.`);
+        const user = await client.users.fetch(plot.discordId);
+        await user.send(`🌿 **Tu ${DrugData[plot.tipo]?.nombre || plot.tipo} está lista!** Usa \`!cosechar\` o \`/drogas cosechar\`.`);
       } catch {}
     }
 
-    // Plantaciones podridas — eliminar directamente
+    // Plantaciones podridas — eliminar
+    await DrugPlot.deleteMany({ fase: 'podrido' });
     await DrugPlot.deleteMany({ fase: 'listo', podridoEn: { $lte: now } });
   } catch (e) {
     console.error('[CRON drugs]', e.message);
