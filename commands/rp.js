@@ -471,13 +471,12 @@ const prefixCommands = [
       const mapaEmbed = new EmbedBuilder()
         .setColor(0x3b82f6)
         .setTitle(`📍 ${zonaNombre} — Mapa`)
-        .setDescription('Indica el **código postal** de tu ubicación según el mapa.\n*Ej: LS-001, GS-045, PB-012*')
+        .setDescription('Indica el **código postal** numérico de tu ubicación.\n*Ej: 8082, 9012, 5123*')
         .setImage('attachment://mapa.png')
         .setFooter({ text: 'Escribe el código en el chat · 30s' })
         .setTimestamp();
 
-      const { AttachmentBuilder } = require('discord.js');
-      const mapaAttachment = mapaFile ? new AttachmentBuilder(mapaFile, { name: 'mapa.png' }) : null;
+      let mapaAttachment = mapaFile ? new AttachmentBuilder(mapaFile, { name: 'mapa.png' }) : null;
       await msg.edit({ embeds: [mapaEmbed], components: [], files: mapaAttachment ? [mapaAttachment] : [] });
 
       let codigoPostal = 'No especificado';
@@ -486,6 +485,26 @@ const prefixCommands = [
         codigoPostal = cpCollected.first().content;
         await cpCollected.first().delete().catch(() => {});
       } catch {}
+
+      // Marcar código postal en el mapa usando Canvas
+      if (codigoPostal !== 'No especificado' && mapaFile) {
+        try {
+          const cv = require('canvas');
+          if (cv) {
+            const img = await cv.loadImage(mapaFile);
+            const canvas = cv.createCanvas(img.width, img.height);
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(20, canvas.height - 70, canvas.width - 40, 50);
+            ctx.fillStyle = '#ff4444';
+            ctx.font = 'bold 36px "Share Tech Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`📍 CP: ${codigoPostal}`, canvas.width / 2, canvas.height - 35);
+            mapaAttachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'mapa.png' });
+          }
+        } catch {}
+      }
 
       // ─── Selección de servicio ──────────────────────────────────────────
       const servEmbed = new EmbedBuilder()
@@ -498,6 +517,7 @@ const prefixCommands = [
         new ButtonBuilder().setCustomId('serv_policia').setLabel('🚔 Policía').setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId('serv_medico').setLabel('🚑 Médico / EMS').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('serv_bomberos').setLabel('🚒 Bomberos').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('serv_todas').setLabel('📟 Todas las Emergencias').setStyle(ButtonStyle.Secondary),
       );
 
       await msg.edit({ embeds: [servEmbed], components: [servRow], files: [] });
@@ -510,7 +530,8 @@ const prefixCommands = [
       } catch {}
 
       // ─── Enviar alerta ──────────────────────────────────────────────────
-      const servNombre = { policia: '🚔 Policía', medico: '🚑 Médico / EMS', bomberos: '🚒 Bomberos' }[servicio] || servicio;
+      const servNombre = { policia: '🚔 Policía', medico: '🚑 Médico / EMS', bomberos: '🚒 Bomberos', todas: '📟 Todas las Emergencias' }[servicio] || servicio;
+      const servRoles = { policia: '<@&1441818963125473436>', medico: '<@&1524872434417926327>', bomberos: '<@&1481316335496724551>', todas: '<@&1441818963125473436> <@&1524872434417926327> <@&1481316335496724551>' }[servicio] || '';
 
       const alertEmbed = new EmbedBuilder()
         .setColor(0xef4444)
@@ -529,13 +550,13 @@ const prefixCommands = [
         .setTimestamp()
         .setFooter({ text: 'AmericanRP · 911' });
 
-      const alertaMapa = mapaFile ? new AttachmentBuilder(mapaFile, { name: 'mapa.png' }) : null;
+      const alertaMapa = mapaAttachment || (mapaFile ? new AttachmentBuilder(mapaFile, { name: 'mapa.png' }) : null);
 
       let enviado = false;
       try {
         const ch = await message.guild.channels.fetch('1441818965218431029').catch(() => null);
         if (ch) {
-          await ch.send({ content: '🚨 **@here**', embeds: [alertEmbed], files: alertaMapa ? [alertaMapa] : [] });
+          await ch.send({ content: servRoles || '🚨 **@here**', embeds: [alertEmbed], files: alertaMapa ? [alertaMapa] : [] });
           enviado = true;
         }
       } catch (err) {
