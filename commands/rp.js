@@ -535,20 +535,20 @@ const prefixCommands = [
       if (codigoPostal !== 'No especificado' && mapaFile) {
         try {
           const cv = require('canvas');
-          if (cv) {
-            const img = await cv.loadImage(mapaFile);
-            const canvas = cv.createCanvas(img.width, img.height);
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
-            ctx.fillStyle = 'rgba(0,0,0,0.6)';
-            ctx.fillRect(20, canvas.height - 70, canvas.width - 40, 50);
-            ctx.fillStyle = '#ff4444';
-            ctx.font = 'bold 36px "Share Tech Mono", monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(`📍 CP: ${codigoPostal}`, canvas.width / 2, canvas.height - 35);
-            mapaAttachment = new AttachmentBuilder(canvas.toBuffer(), { name: 'mapa.png' });
-          }
-        } catch {}
+          const img = await cv.loadImage(mapaFile);
+          const c = cv.createCanvas(img.width, img.height);
+          const ctx = c.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          ctx.fillStyle = 'rgba(0,0,0,0.55)';
+          ctx.fillRect(10, c.height - 65, c.width - 20, 48);
+          ctx.fillStyle = '#ff4444';
+          ctx.font = 'bold 32px Arial, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(`📍 CP: ${codigoPostal}`, c.width / 2, c.height - 28);
+          mapaAttachment = new AttachmentBuilder(c.toBuffer(), { name: 'mapa.png' });
+        } catch (e) {
+          console.error('[911 Canvas]', e.message);
+        }
       }
 
       // ─── Selección de servicio ──────────────────────────────────────────
