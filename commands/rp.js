@@ -9,6 +9,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  AttachmentBuilder,
 } = require('discord.js');
 const { getPlayer, getInventory } = require('../utils/helpers');
 const E = require('../utils/embeds');
@@ -403,97 +404,167 @@ const prefixCommands = [
     },
   },
 
-  // ── !911 [descripción] — Llamada de emergencia interactiva ─────────────────
+  // ── !911 — Llamada de emergencia con operador ───────────────────────────
   {
     name: '911',
     aliases: ['emergencia', 'socorro'],
-    description: '!911 [descripción] — Llamar a servicios de emergencia',
-    async run(message, args) {
-      if (!args.length) return message.reply('Uso: `!911 [descripción de la emergencia]`\nEj: `!911 Hay un tiroteo en el puerto de LS`');
+    description: '!911 — Llamar al 911 (operador automático)',
+    async run(message, args, client) {
       const player = await getPersonaje(message.author.id, message.author.username);
-      if (!player) return message.reply('❌ Necesitas un personaje para llamar al 911. Usa `/personaje crear`.');
+      if (!player) return message.reply('❌ Necesitas un personaje. Usa `/personaje crear`.');
 
-      const descripcion = args.join(' ');
-
-      // Borrar mensaje original del usuario
+      const preguntas = [
+        { q: '📞 **OPERADOR 911:** ¿Cuál es tu **nombre completo**?', key: 'nombreCompleto' },
+        { q: '📞 **OPERADOR 911:** ¿Qué **vestimenta** llevas puesta? (ropa, colores, accesorios)', key: 'vestimenta' },
+        { q: '📞 **OPERADOR 911:** ¿Usas algún **vehículo**? Describe marca, modelo, color y matrícula. (responde "ninguno" si no)', key: 'vehiculo' },
+        { q: '📞 **OPERADOR 911:** ¿Llevas **armas** encima? ¿Cuáles? (responde "ninguna" si no)', key: 'armas' },
+        { q: '📞 **OPERADOR 911:** Describe la **emergencia** con detalles.', key: 'notas' },
+      ];
+      const respuestas = {};
+      let idx = 0;
+      let msg = await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x3b82f6).setTitle('📞 Llamada al 911').setDescription(preguntas[0].q).setFooter({ text: 'Responde en el chat · 60s para responder' }).setTimestamp()] });
       await message.delete().catch(() => {});
 
-      const selEmbed = new EmbedBuilder()
+      const filter = m => m.author.id === message.author.id;
+
+      for (let i = 0; i < preguntas.length; i++) {
+        if (i > 0) await msg.edit({ embeds: [new EmbedBuilder().setColor(0x3b82f6).setTitle('📞 Llamada al 911').setDescription(preguntas[i].q).setFooter({ text: `Paso ${i + 1}/${preguntas.length}` }).setTimestamp()] });
+        try {
+          const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
+          const r = collected.first();
+          respuestas[preguntas[i].key] = r.content;
+          await r.delete().catch(() => {});
+        } catch {
+          return msg.edit({ embeds: [E.err('Tiempo agotado', 'La llamada al 911 ha expirado. Cuelga y vuelve a intentar.')] });
+        }
+      }
+
+      // ─── Selección de zona ──────────────────────────────────────────────
+      const zoneEmbed = new EmbedBuilder()
         .setColor(0xef4444)
-        .setTitle('🚨 LLAMADA AL 911')
-        .setDescription(`**${player.getFullName()}** está llamando al servicio de emergencias.\n\n> *"${descripcion}"*\n\n**¿Qué servicio necesitas?**`)
-        .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-        .setFooter({ text: 'Tienes 30 segundos para seleccionar el servicio' })
+        .setTitle('📍 Selecciona tu zona')
+        .setDescription('Elige la zona donde te encuentras para enviar el mapa de códigos postales.')
+        .setFooter({ text: 'Selecciona una zona con los botones' })
         .setTimestamp();
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('e911_policia').setLabel('🚔 Policía').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('e911_medico').setLabel('🚑 Médico / EMS').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('e911_bomberos').setLabel('🚒 Bomberos').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('e911_cancelar').setLabel('❌ Cancelar').setStyle(ButtonStyle.Secondary),
+      const zoneRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('zona_ciudad').setLabel('🏙️ Ciudad').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('zona_gran_ señora').setLabel('🌾 Gran Señora').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('zona_norte').setLabel('🏔️ Norte (Paleto)').setStyle(ButtonStyle.Secondary),
       );
 
-      const msg = await message.channel.send({ embeds: [selEmbed], components: [row] });
+      await msg.edit({ embeds: [zoneEmbed], components: [zoneRow] });
 
-      const collector = msg.createMessageComponentCollector({
-        filter: i => i.user.id === message.author.id,
-        time: 30_000,
-        max: 1,
-      });
+      let zona;
+      try {
+        const zonaInt = await msg.awaitMessageComponent({ filter: i => i.user.id === message.author.id, time: 30000 });
+        zona = zonaInt.customId.replace('zona_', '');
+        await zonaInt.deferUpdate();
+      } catch {
+        return msg.edit({ embeds: [E.err('Tiempo agotado', 'No seleccionaste zona. Llamada cancelada.')], components: [] });
+      }
 
-      collector.on('collect', async i => {
-        if (i.customId === 'e911_cancelar') {
-          await i.update({ embeds: [E.info('Llamada cancelada', 'Has colgado el teléfono.')], components: [] });
-          setTimeout(() => msg.delete().catch(() => {}), 4000);
-          return;
-        }
+      const zonaNombre = { ciudad: '🏙️ Ciudad', 'gran_ señora': '🌾 Gran Señora', norte: '🏔️ Norte (Paleto)' }[zona] || zona;
+      const mapaFile = { ciudad: './assets/mapa_ciudad.png', 'gran_ señora': './assets/mapa_gran_señora.png', norte: './assets/mapa_norte.png' }[zona] || null;
 
-        const tipo = i.customId.replace('e911_', '');
-        const embed911 = E.emergencia911(player, tipo, descripcion);
+      // ─── Pedir código postal ────────────────────────────────────────────
+      const mapaEmbed = new EmbedBuilder()
+        .setColor(0x3b82f6)
+        .setTitle(`📍 ${zonaNombre} — Mapa`)
+        .setDescription('Indica el **código postal** de tu ubicación según el mapa.\n*Ej: LS-001, GS-045, PB-012*')
+        .setImage('attachment://mapa.png')
+        .setFooter({ text: 'Escribe el código en el chat · 30s' })
+        .setTimestamp();
 
-        // ── Enviar al canal de emergencias/policía ──────────────────────────
-        let enviado = false;
-        try {
-          const gc = await GuildConfig.findOne({ guildId: message.guild.id });
-          // Prioridad: canal específico del tipo → emergencias → rp
-          const canales = gc?.canales || {};
-          const chId = (tipo === 'policia' ? canales.policia : tipo === 'medico' ? canales.medico : canales.bomberos)
-                     || canales.emergencias
-                     || canales.rp;
+      const { AttachmentBuilder } = require('discord.js');
+      const mapaAttachment = mapaFile ? new AttachmentBuilder(mapaFile, { name: 'mapa.png' }) : null;
+      await msg.edit({ embeds: [mapaEmbed], components: [], files: mapaAttachment ? [mapaAttachment] : [] });
 
-          if (chId) {
-            const ch = message.guild.channels.cache.get(chId);
-            if (ch) {
-              const ping = tipo === 'policia' ? '🚨 **@here** — ' : '';
-              await ch.send({ content: ping || undefined, embeds: [embed911] });
-              enviado = true;
-            }
+      let codigoPostal = 'No especificado';
+      try {
+        const cpCollected = await message.channel.awaitMessages({ filter, max: 1, time: 30000, errors: ['time'] });
+        codigoPostal = cpCollected.first().content;
+        await cpCollected.first().delete().catch(() => {});
+      } catch {}
+
+      // ─── Selección de servicio ──────────────────────────────────────────
+      const servEmbed = new EmbedBuilder()
+        .setColor(0xef4444)
+        .setTitle('🚨 ¿Qué servicio necesitas?')
+        .setDescription('Selecciona el tipo de emergencia.')
+        .setTimestamp();
+
+      const servRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('serv_policia').setLabel('🚔 Policía').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('serv_medico').setLabel('🚑 Médico / EMS').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('serv_bomberos').setLabel('🚒 Bomberos').setStyle(ButtonStyle.Secondary),
+      );
+
+      await msg.edit({ embeds: [servEmbed], components: [servRow], files: [] });
+
+      let servicio = 'policia';
+      try {
+        const servInt = await msg.awaitMessageComponent({ filter: i => i.user.id === message.author.id, time: 30000 });
+        servicio = servInt.customId.replace('serv_', '');
+        await servInt.deferUpdate();
+      } catch {}
+
+      // ─── Enviar alerta ──────────────────────────────────────────────────
+      const servNombre = { policia: '🚔 Policía', medico: '🚑 Médico / EMS', bomberos: '🚒 Bomberos' }[servicio] || servicio;
+
+      const alertEmbed = new EmbedBuilder()
+        .setColor(0xef4444)
+        .setTitle(`🚨 LLAMADA AL 911 — ${servNombre}`)
+        .setDescription(
+          `**👤 Nombre:** ${respuestas.nombreCompleto}\n` +
+          `**👕 Vestimenta:** ${respuestas.vestimenta}\n` +
+          `**🚗 Vehículo:** ${respuestas.vehiculo}\n` +
+          `**🔫 Armas:** ${respuestas.armas}\n` +
+          `**📝 Notas:** ${respuestas.notas}\n\n` +
+          `**📍 Zona:** ${zonaNombre}\n` +
+          `**📍 Código postal:** \`${codigoPostal}\``
+        )
+        .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+        .setImage(mapaAttachment ? 'attachment://mapa.png' : null)
+        .setTimestamp()
+        .setFooter({ text: 'AmericanRP · 911' });
+
+      const alertaMapa = mapaFile ? new AttachmentBuilder(mapaFile, { name: 'mapa.png' }) : null;
+
+      let enviado = false;
+      try {
+        const gc = await GuildConfig.findOne({ guildId: message.guild.id });
+        const canales = gc?.canales || {};
+        const chId = (servicio === 'policia' ? canales.policia : servicio === 'medico' ? canales.medico : canales.bomberos)
+                   || canales.emergencias || canales.rp;
+        if (chId) {
+          const ch = message.guild.channels.cache.get(chId) || await message.guild.channels.fetch(chId).catch(() => null);
+          if (ch) {
+            await ch.send({ content: '🚨 **@here**', embeds: [alertEmbed], files: alertaMapa ? [alertaMapa] : [] });
+            enviado = true;
           }
-        } catch (err) {
-          console.error('[911 channel]', err.message);
         }
+      } catch (err) {
+        console.error('[911]', err.message);
+      }
 
-        const confirmEmbed = new EmbedBuilder()
-          .setColor(0x22c55e)
-          .setTitle('📞 Llamada enviada')
-          .setDescription(
-            enviado
-              ? `✅ Tu llamada ha sido enviada a los servicios de emergencia.\n\n> *Espera a que los servicios lleguen a tu posición.*`
-              : `⚠️ Llamada procesada pero no se encontró canal configurado.\n\n*Pide a un admin que configure \`/config canales emergencias\`.*`,
-          )
-          .setFooter({ text: 'AmericanRP · 911' });
+      // ─── Confirmación ──────────────────────────────────────────────────
+      const confirmEmbed = new EmbedBuilder()
+        .setColor(enviado ? 0x22c55e : 0xf59e0b)
+        .setTitle(enviado ? '✅ Llamada enviada' : '⚠️ Sin canal configurado')
+        .setDescription(
+          enviado
+            ? `Tu llamada al **${servNombre}** ha sido enviada.\nLos servicios de emergencia están en camino.`
+            : 'La llamada se procesó pero no hay canal de emergencias configurado. Contacta a un admin.'
+        )
+        .addFields(
+          { name: '📍 Zona', value: zonaNombre, inline: true },
+          { name: '📍 Código Postal', value: `\`${codigoPostal}\``, inline: true },
+        )
+        .setTimestamp();
 
-        await i.update({ embeds: [confirmEmbed], components: [] });
-        setTimeout(() => msg.delete().catch(() => {}), 6000);
-      });
-
-      collector.on('end', (_, reason) => {
-        if (reason === 'time') {
-          msg.edit({ embeds: [E.warn('Tiempo agotado', 'La llamada al 911 expiró por inactividad.')], components: [] })
-            .then(m => setTimeout(() => m.delete().catch(() => {}), 4000))
-            .catch(() => {});
-        }
-      });
+      await msg.edit({ embeds: [confirmEmbed], components: [], files: [] });
+      setTimeout(() => msg.delete().catch(() => {}), 15000);
     },
   },
 
