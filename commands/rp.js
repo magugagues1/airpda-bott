@@ -525,17 +525,25 @@ const prefixCommands = [
       await msg.edit({ embeds: [mapaEmbed], components: [], files: mapaAttachment ? [mapaAttachment] : [] });
 
       let codigoPostal = 'No especificado';
-      try {
-        const cpCollected = await message.channel.awaitMessages({ filter, max: 1, time: 30000, errors: ['time'] });
-        codigoPostal = cpCollected.first().content;
-        await cpCollected.first().delete().catch(() => {});
-      } catch {}
+      const { getCoord } = require('../data/codigos_postales');
+      for (let intentos = 0; intentos < 3; intentos++) {
+        try {
+          const cpCollected = await message.channel.awaitMessages({ filter, max: 1, time: 30000, errors: ['time'] });
+          codigoPostal = cpCollected.first().content;
+          await cpCollected.first().delete().catch(() => {});
+          const existe = getCoord(zona, codigoPostal);
+          if (existe || intentos >= 2) break;
+          await msg.edit({ embeds: [new EmbedBuilder().setColor(0xf59e0b).setTitle('📍 Código inválido').setDescription(`El código **${codigoPostal}** no existe en ${zonaNombre}.\n\nIntenta de nuevo o escribe "cancelar" para omitir.`).setImage('attachment://mapa.png').setTimestamp()], files: mapaAttachment ? [mapaAttachment] : [] });
+        } catch {
+          codigoPostal = 'No especificado';
+          break;
+        }
+      }
 
       // Marcar código postal en el mapa usando Canvas
       if (codigoPostal !== 'No especificado' && mapaFile) {
         try {
           const cv = require('canvas');
-          const { getCoord } = require('../data/codigos_postales');
           const img = await cv.loadImage(mapaFile);
           const c = cv.createCanvas(img.width, img.height);
           const ctx = c.getContext('2d');
@@ -647,10 +655,14 @@ const prefixCommands = [
   // ── !mapa [zona] [código] — Probar marcado de mapa ──────────────────────
   {
     name: 'mapa',
-    aliases: ['map'],
-    description: '!mapa [ciudad|gran_señora|norte] [código] — Probar mapa con código postal',
+    aliases: ['map', 'mapa-coord'],
+    description: '!mapa [ciudad|gran_señora|norte] [código] — Ver mapa con círculo en código postal',
     async run(message, args) {
-      if (args.length < 2) return message.reply('Uso: `!mapa [ciudad|gran_señora|norte] [código postal]`\nEj: `!mapa ciudad 8202`');
+      if (args.length < 2) return message.reply('Uso: `!mapa [zona] [código]`\nEj: `!mapa ciudad 8202`\n\nPara ajustar coordenadas: `!mapa-coord [zona] [código] [x] [y]`');
+      if (args[0] === '-coord') {
+        if (args.length < 4) return message.reply('Uso: `!mapa-coord [zona] [código] [x] [y]`');
+        return message.reply('Edita manualmente `data/codigos_postales.js` con las coordenadas que veas en el mapa.');
+      }
       const zona = args[0].toLowerCase();
       const codigo = args[1];
       const mapas = { ciudad: './assets/mapa_ciudad.png', gran_señora: './assets/mapa_gran_señora.png', norte: './assets/mapa_norte.png' };
@@ -669,32 +681,16 @@ const prefixCommands = [
         const coord = getCoord(zona, codigo);
         if (coord) {
           const [x, y] = coord;
-          // Círculo rojo grande
-          ctx.beginPath();
-          ctx.arc(x, y, 20, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(255,0,0,0.25)';
-          ctx.fill();
-          ctx.strokeStyle = '#ff0000';
-          ctx.lineWidth = 4;
-          ctx.stroke();
-          // Círculo interior
-          ctx.beginPath();
-          ctx.arc(x, y, 8, 0, Math.PI * 2);
-          ctx.fillStyle = '#ff0000';
-          ctx.fill();
-          // Etiqueta
+          ctx.beginPath(); ctx.arc(x, y, 20, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255,0,0,0.25)'; ctx.fill();
+          ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 4; ctx.stroke();
+          ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2);
+          ctx.fillStyle = '#ff0000'; ctx.fill();
           ctx.font = 'bold 16px Arial, sans-serif';
-          ctx.fillStyle = '#ffffff';
-          ctx.textAlign = 'center';
+          ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
           ctx.fillText(codigo, x, y + 40);
         } else {
-          // Código no encontrado en coordenadas: mostrar en barra inferior
-          ctx.fillStyle = 'rgba(0,0,0,0.6)';
-          ctx.fillRect(10, c.height - 60, c.width - 20, 42);
-          ctx.fillStyle = '#ff4444';
-          ctx.font = 'bold 28px Arial, sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(`CP: ${codigo} (ubicación no disponible)`, c.width / 2, c.height - 28);
+          return message.reply(`❌ El código **${codigo}** no existe en la zona **${nombres[zona] || zona}**.\nUsa \`!mapa ${zona} 8082\` para probar uno que sí existe.`);
         }
 
         const { AttachmentBuilder } = require('discord.js');
