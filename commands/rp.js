@@ -535,16 +535,32 @@ const prefixCommands = [
       if (codigoPostal !== 'No especificado' && mapaFile) {
         try {
           const cv = require('canvas');
+          const { getCoord } = require('../data/codigos_postales');
           const img = await cv.loadImage(mapaFile);
           const c = cv.createCanvas(img.width, img.height);
           const ctx = c.getContext('2d');
           ctx.drawImage(img, 0, 0);
-          ctx.fillStyle = 'rgba(0,0,0,0.55)';
-          ctx.fillRect(10, c.height - 65, c.width - 20, 48);
-          ctx.fillStyle = '#ff4444';
-          ctx.font = 'bold 28px Arial, sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(`CP: ${codigoPostal}`, c.width / 2, c.height - 28);
+
+          const coord = getCoord(zona, codigoPostal);
+          if (coord) {
+            const [x, y] = coord;
+            ctx.beginPath(); ctx.arc(x, y, 20, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,0,0,0.25)'; ctx.fill();
+            ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 4; ctx.stroke();
+            ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff0000'; ctx.fill();
+            ctx.font = 'bold 16px Arial, sans-serif';
+            ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
+            ctx.fillText(codigoPostal, x, y + 40);
+          } else {
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(10, c.height - 60, c.width - 20, 42);
+            ctx.fillStyle = '#ff4444';
+            ctx.font = 'bold 28px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`CP: ${codigoPostal}`, c.width / 2, c.height - 28);
+          }
+
           mapaAttachment = new AttachmentBuilder(c.toBuffer(), { name: 'mapa.png' });
         } catch (e) {
           console.error('[911 Canvas]', e.message);
@@ -636,7 +652,7 @@ const prefixCommands = [
     async run(message, args) {
       if (args.length < 2) return message.reply('Uso: `!mapa [ciudad|gran_señora|norte] [código postal]`\nEj: `!mapa ciudad 8202`');
       const zona = args[0].toLowerCase();
-      const codigo = args.slice(1).join(' ');
+      const codigo = args[1];
       const mapas = { ciudad: './assets/mapa_ciudad.png', gran_señora: './assets/mapa_gran_señora.png', norte: './assets/mapa_norte.png' };
       const nombres = { ciudad: '🏙️ Ciudad', gran_señora: '🌾 Gran Señora', norte: '🏔️ Norte (Paleto)' };
       const mapaFile = mapas[zona];
@@ -644,16 +660,43 @@ const prefixCommands = [
 
       try {
         const cv = require('canvas');
+        const { getCoord } = require('../data/codigos_postales');
         const img = await cv.loadImage(mapaFile);
         const c = cv.createCanvas(img.width, img.height);
         const ctx = c.getContext('2d');
         ctx.drawImage(img, 0, 0);
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(10, c.height - 60, c.width - 20, 42);
-        ctx.fillStyle = '#ff4444';
-        ctx.font = 'bold 28px Arial, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`CP: ${codigo}`, c.width / 2, c.height - 28);
+
+        const coord = getCoord(zona, codigo);
+        if (coord) {
+          const [x, y] = coord;
+          // Círculo rojo grande
+          ctx.beginPath();
+          ctx.arc(x, y, 20, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255,0,0,0.25)';
+          ctx.fill();
+          ctx.strokeStyle = '#ff0000';
+          ctx.lineWidth = 4;
+          ctx.stroke();
+          // Círculo interior
+          ctx.beginPath();
+          ctx.arc(x, y, 8, 0, Math.PI * 2);
+          ctx.fillStyle = '#ff0000';
+          ctx.fill();
+          // Etiqueta
+          ctx.font = 'bold 16px Arial, sans-serif';
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.fillText(codigo, x, y + 40);
+        } else {
+          // Código no encontrado en coordenadas: mostrar en barra inferior
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fillRect(10, c.height - 60, c.width - 20, 42);
+          ctx.fillStyle = '#ff4444';
+          ctx.font = 'bold 28px Arial, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(`CP: ${codigo} (ubicación no disponible)`, c.width / 2, c.height - 28);
+        }
+
         const { AttachmentBuilder } = require('discord.js');
         const attach = new AttachmentBuilder(c.toBuffer(), { name: 'mapa.png' });
         const embed = new EmbedBuilder()
