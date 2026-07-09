@@ -80,7 +80,7 @@ async function handleAntiSpam(message, sec) {
   const entries = (spamTracker.get(key) ?? []).filter(e => now - e.ts < CFG.SPAM_INTERVAL_MS);
   entries.push({ ts: now });
   spamTracker.set(key, entries);
-  if (entries.length < CFG.SPAM_MSG_LIMIT) return false;
+  if (entries.lengthh < CFG.SPAM_MSG_LIMIT) return false;
   spamTracker.delete(key);
   const evidence = await captureEvidence(message, 'Spam masivo').catch(() => null);
   await deleteUserMessages(message.channel, message.author.id);
