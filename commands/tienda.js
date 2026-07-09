@@ -1,0 +1,644 @@
+/**
+ * TIENDA OFICIAL — Los Santos Marketplace
+ * 80+ items · 8 categorías · SelectMenu interactivo
+ * Slash: /tienda /comprar /vender /usar /vitales
+ */
+const {
+  SlashCommandBuilder, EmbedBuilder,
+  ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
+  ComponentType,
+} = require('discord.js');
+const { getPlayer, getInventory, formatMoney } = require('../utils/helpers');
+const E = require('../utils/embeds');
+const config = require('../config');
+const { ICONS, BANNERS, addImage } = require('../utils/images');
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CATÁLOGO COMPLETO
+// ═══════════════════════════════════════════════════════════════════════════════
+const CATALOGO = {
+
+  comida: {
+    emoji: '🍔', label: 'Comida',
+    descripcion: 'Restaura el hambre del personaje',
+    items: [
+      { id: 'bocadillo',    nombre: 'Bocadillo',          precio:   30, emoji: '🥪', tipo: 'comida',  efecto: { hambre: 25 },         desc: '+25 hambre' },
+      { id: 'hamburguesa',  nombre: 'Hamburguesa',         precio:   50, emoji: '🍔', tipo: 'comida',  efecto: { hambre: 40 },         desc: '+40 hambre' },
+      { id: 'hot_dog',      nombre: 'Hot Dog',             precio:   25, emoji: '🌭', tipo: 'comida',  efecto: { hambre: 22 },         desc: '+22 hambre' },
+      { id: 'taco',         nombre: 'Taco',                precio:   35, emoji: '🌮', tipo: 'comida',  efecto: { hambre: 28 },         desc: '+28 hambre' },
+      { id: 'ensalada',     nombre: 'Ensalada',            precio:   40, emoji: '🥗', tipo: 'comida',  efecto: { hambre: 30 },         desc: '+30 hambre' },
+      { id: 'pizza',        nombre: 'Pizza',               precio:   80, emoji: '🍕', tipo: 'comida',  efecto: { hambre: 60 },         desc: '+60 hambre' },
+      { id: 'pollo',        nombre: 'Pollo asado',         precio:   90, emoji: '🍗', tipo: 'comida',  efecto: { hambre: 65 },         desc: '+65 hambre' },
+      { id: 'sushi',        nombre: 'Sushi premium',       precio:  120, emoji: '🍱', tipo: 'comida',  efecto: { hambre: 70 },         desc: '+70 hambre' },
+      { id: 'donut',        nombre: 'Donut',               precio:   20, emoji: '🍩', tipo: 'comida',  efecto: { hambre: 18 },         desc: '+18 hambre' },
+      { id: 'fruta',        nombre: 'Cesta de fruta',      precio:   45, emoji: '🍎', tipo: 'comida',  efecto: { hambre: 30, salud: 5 }, desc: '+30 hambre +5 salud' },
+      { id: 'steak',        nombre: 'Steak de ternera',    precio:  150, emoji: '🥩', tipo: 'comida',  efecto: { hambre: 80 },         desc: '+80 hambre' },
+      { id: 'pan',          nombre: 'Pan',                 precio:   10, emoji: '🍞', tipo: 'comida',  efecto: { hambre: 12 },         desc: '+12 hambre · Económico' },
+    ],
+  },
+
+  bebidas: {
+    emoji: '🥤', label: 'Bebidas',
+    descripcion: 'Restaura la sed del personaje',
+    items: [
+      { id: 'agua',         nombre: 'Agua mineral',        precio:   10, emoji: '💧', tipo: 'bebida',  efecto: { sed: 30 },            desc: '+30 sed · Básica' },
+      { id: 'leche',        nombre: 'Leche',               precio:   15, emoji: '🥛', tipo: 'bebida',  efecto: { sed: 25, salud: 3 }, desc: '+25 sed +3 salud' },
+      { id: 'cafe',         nombre: 'Café',                precio:   20, emoji: '☕', tipo: 'bebida',  efecto: { sed: 20 },            desc: '+20 sed' },
+      { id: 'zumo',         nombre: 'Zumo natural',        precio:   30, emoji: '🧃', tipo: 'bebida',  efecto: { sed: 38 },            desc: '+38 sed' },
+      { id: 'refresco',     nombre: 'Refresco',            precio:   25, emoji: '🥤', tipo: 'bebida',  efecto: { sed: 40 },            desc: '+40 sed' },
+      { id: 'cerveza',      nombre: 'Cerveza',             precio:   50, emoji: '🍺', tipo: 'bebida',  efecto: { sed: 35 },            desc: '+35 sed' },
+      { id: 'vino',         nombre: 'Vino tinto',          precio:   80, emoji: '🍷', tipo: 'bebida',  efecto: { sed: 45 },            desc: '+45 sed · Gama alta' },
+      { id: 'energetica',   nombre: 'Bebida energética',   precio:   60, emoji: '⚡', tipo: 'bebida',  efecto: { sed: 50 },            desc: '+50 sed · Extra energía' },
+      { id: 'cocktail',     nombre: 'Cóctel premium',      precio:  120, emoji: '🍹', tipo: 'bebida',  efecto: { sed: 60 },            desc: '+60 sed · Top de gama' },
+    ],
+  },
+
+  farmacia: {
+    emoji: '💊', label: 'Farmacia',
+    descripcion: 'Medicamentos y kits de primeros auxilios',
+    items: [
+      { id: 'vendas',       nombre: 'Vendas',              precio:   80, emoji: '🩹', tipo: 'medkit',  efecto: { salud: 15 },          desc: '+15 salud · Básico' },
+      { id: 'vitaminas',    nombre: 'Vitaminas',           precio:   80, emoji: '💊', tipo: 'medicina', efecto: { salud: 10, hambre: 10, sed: 10 }, desc: '+10 salud/hambre/sed' },
+      { id: 'botiquin',     nombre: 'Botiquín básico',     precio:  150, emoji: '🧰', tipo: 'medkit',  efecto: { salud: 25 },          desc: '+25 salud' },
+      { id: 'analgésico',   nombre: 'Analgésico',          precio:  120, emoji: '🔵', tipo: 'medicina', efecto: { salud: 20 },          desc: '+20 salud · Reduce dolor RP' },
+      { id: 'morfina',      nombre: 'Morfina',             precio:  250, emoji: '💉', tipo: 'medicina', efecto: { salud: 40 },          desc: '+40 salud · Uso médico RP' },
+      { id: 'kit_medico',   nombre: 'Kit médico completo', precio:  400, emoji: '🏥', tipo: 'medkit',  efecto: { salud: 60 },          desc: '+60 salud' },
+      { id: 'suero_iv',     nombre: 'Suero IV',            precio:  600, emoji: '🩺', tipo: 'medkit',  efecto: { salud: 80, sed: 40 },  desc: '+80 salud +40 sed · EMT' },
+      { id: 'desfibrilador', nombre: 'Desfibrilador',      precio: 1500, emoji: '⚡', tipo: 'medkit',  efecto: { salud: 100, revivir: true }, desc: '+100 salud · Revive si muerto' },
+    ],
+  },
+
+  equipo: {
+    emoji: '🦺', label: 'Equipo & Protección',
+    descripcion: 'Armaduras, chalecos y equipo táctico',
+    items: [
+      { id: 'guantes',      nombre: 'Guantes tácticos',    precio:  300, emoji: '🧤', tipo: 'equipo',  equipable: true,               desc: 'Equipo personal estándar' },
+      { id: 'casco',        nombre: 'Casco táctico',       precio:  800, emoji: '⛑️', tipo: 'armadura', equipable: true, efecto: { proteccion: 10 }, desc: '-10% daño' },
+      { id: 'chaleco_ligero', nombre: 'Chaleco ligero',    precio:  900, emoji: '🧥', tipo: 'armadura', equipable: true, efecto: { proteccion: 15 }, desc: '-15% daño recibido' },
+      { id: 'chaleco',      nombre: 'Chaleco antibalas',   precio: 1500, emoji: '🦺', tipo: 'armadura', equipable: true, efecto: { proteccion: 30 }, desc: '-30% daño recibido' },
+      { id: 'maletin',      nombre: 'Maletín ejecutivo',   precio:  500, emoji: '💼', tipo: 'contenedor', equipable: true, efecto: { slots: 5 }, desc: '+5 slots inventario' },
+      { id: 'mochila',      nombre: 'Mochila táctica',     precio: 1000, emoji: '🎒', tipo: 'contenedor', equipable: true, efecto: { slots: 10 }, desc: '+10 slots inventario' },
+      { id: 'linterna',     nombre: 'Linterna',            precio:  200, emoji: '🔦', tipo: 'herramienta', equipable: true,               desc: 'Visión nocturna RP' },
+      { id: 'cuerda',       nombre: 'Cuerda',              precio:  150, emoji: '🪢', tipo: 'herramienta',                               desc: 'Útil para acciones RP' },
+      { id: 'gas_lacrimo',  nombre: 'Granada de humo',     precio:  500, emoji: '💨', tipo: 'equipo',  equipable: true,               desc: 'Granada de humo RP' },
+    ],
+  },
+
+  armamento: {
+    emoji: '🔫', label: 'Armamento',
+    descripcion: '⚠️ Requieren permiso de armas válido',
+    items: [
+      { id: 'spray_pimienta', nombre: 'Spray de pimienta', precio:  200, emoji: '🫧', tipo: 'arma', equipable: true, desc: 'Defensa personal legal' },
+      { id: 'navaja',       nombre: 'Navaja',              precio:  500, emoji: '🔪', tipo: 'arma', equipable: true, desc: 'Arma cuerpo a cuerpo C/C' },
+      { id: 'bate',         nombre: 'Bate de béisbol',     precio:  300, emoji: '🏏', tipo: 'arma', equipable: true, desc: 'Arma C/C contundente' },
+      { id: 'pistola_fogueo', nombre: 'Pistola de fogueo', precio: 2000, emoji: '🔫', tipo: 'arma', equipable: true, desc: 'Solo RP — No hace daño' },
+      { id: 'spray_defensa', nombre: 'Spray defensa personal', precio: 350, emoji: '🛡️', tipo: 'arma', equipable: true, desc: 'Aerosol de defensa' },
+    ],
+  },
+
+  radio: {
+    emoji: '📡', label: 'Radio & Comunicaciones',
+    descripcion: 'Equipos de radio, walkie-talkies y dispositivos de comunicación',
+    items: [
+      { id: 'movil_basico', nombre: 'Móvil prepago',        precio:  150, emoji: '📱', tipo: 'movil', equipable: true, desc: 'Teléfono básico de prepago' },
+      { id: 'movil_medio',  nombre: 'Smartphone estándar',  precio:  800, emoji: '📳', tipo: 'movil', equipable: true, desc: 'Teléfono con apps básicas' },
+      { id: 'movil_premium', nombre: 'Smartphone premium',  precio: 2500, emoji: '📲', tipo: 'movil', equipable: true, desc: 'Top de gama · Todas las apps' },
+      { id: 'walkie',       nombre: 'Walkie-talkie civil',  precio:  400, emoji: '📻', tipo: 'radio', equipable: true, desc: 'Radio civil · Canal público' },
+      { id: 'radio_pro',    nombre: 'Radio profesional',    precio: 1200, emoji: '📡', tipo: 'radio', equipable: true, desc: 'Largo alcance · Multi-canal' },
+      { id: 'auricular',    nombre: 'Auricular discreto',   precio:  600, emoji: '🎧', tipo: 'radio', equipable: true, desc: 'Comunicación discreta · Earpiece' },
+      { id: 'tablet',       nombre: 'Tablet',               precio: 1500, emoji: '📟', tipo: 'movil', equipable: true, desc: 'Tablet para trabajo RP' },
+      { id: 'laptop',       nombre: 'Laptop',               precio: 3000, emoji: '💻', tipo: 'movil', equipable: true, desc: 'Portátil para hacking/trabajo RP' },
+    ],
+  },
+
+  tramites: {
+    emoji: '📋', label: 'Trámites Legales',
+    descripcion: '🏛️ Documentación oficial · Ayuntamiento de Los Santos',
+    items: [
+      { id: 'dni',           nombre: 'Renovación de DNI',        precio:   200, emoji: '🪪', tipo: 'documento', desc: 'DNI renovado · Necesario para trámites' },
+      { id: 'licencia_b',    nombre: 'Licencia de conducir (B)', precio:   800, emoji: '🚗', tipo: 'documento', desc: 'Clase B · Vehículos ligeros' },
+      { id: 'licencia_a',    nombre: 'Licencia de motocicleta (A)', precio: 600, emoji: '🏍️', tipo: 'documento', desc: 'Clase A · Motocicletas' },
+      { id: 'licencia_c',    nombre: 'Licencia de camión (C)',   precio:  1500, emoji: '🚛', tipo: 'documento', desc: 'Clase C · Vehículos pesados' },
+      { id: 'permiso_armas', nombre: 'Permiso de armas',         precio:  2500, emoji: '🔫', tipo: 'documento', desc: 'Portar arma corta legal · 30 días' },
+      { id: 'pasaporte',     nombre: 'Pasaporte',                precio:  1000, emoji: '📘', tipo: 'documento', desc: 'Pasaporte internacional RP' },
+      { id: 'antecedentes',  nombre: 'Certificado antecedentes', precio:   350, emoji: '📄', tipo: 'documento', desc: 'Informe oficial de antecedentes' },
+      { id: 'cert_medico',   nombre: 'Certificado médico',       precio:   400, emoji: '🏥', tipo: 'documento', desc: 'Certificado médico del LSFD' },
+      { id: 'registro_emp',  nombre: 'Registro de empresa',      precio:  5000, emoji: '🏢', tipo: 'documento', desc: 'Registra tu empresa en el ayuntamiento' },
+      { id: 'licencia_bar',  nombre: 'Licencia apertura local',  precio:  3500, emoji: '🍺', tipo: 'documento', desc: 'Apertura bar/local de hostelería' },
+      { id: 'contrato_alq',  nombre: 'Contrato de alquiler',     precio:  1200, emoji: '🏠', tipo: 'documento', desc: 'Contrato de alquiler de vivienda RP' },
+      { id: 'cert_penales',  nombre: 'Certificado de penales',   precio:   300, emoji: '⚖️', tipo: 'documento', desc: 'Certificado de penales · Uso legal' },
+    ],
+  },
+
+  mecanica: {
+    emoji: '🔧', label: 'Mecánica & Vehículos',
+    descripcion: 'Herramientas, repuestos y mantenimiento de vehículos',
+    items: [
+      { id: 'gasolina',     nombre: 'Bidón de gasolina',    precio:  200, emoji: '⛽', tipo: 'combustible', desc: 'Recarga el depósito RP' },
+      { id: 'neumatico',    nombre: 'Neumático de repuesto', precio: 500, emoji: '🔄', tipo: 'herramienta', desc: 'Repuesto para pinchazos' },
+      { id: 'kit_rep',      nombre: 'Kit de reparación',    precio:  800, emoji: '🔧', tipo: 'herramienta', efecto: { reparar: 50 }, desc: '+50 estado vehículo' },
+      { id: 'kit_rep_pro',  nombre: 'Kit mecánico PRO',     precio: 2000, emoji: '🛠️', tipo: 'herramienta', efecto: { reparar: 100 }, desc: 'Reparación completa' },
+      { id: 'gato_hidr',    nombre: 'Gato hidráulico',      precio:  600, emoji: '⚙️', tipo: 'herramienta', desc: 'Necesario para cambiar ruedas RP' },
+      { id: 'pintura',      nombre: 'Spray de pintura',     precio:  300, emoji: '🎨', tipo: 'herramienta', desc: 'Cambia el color del coche RP' },
+      { id: 'inm_alarma',   nombre: 'Inmovilizador/alarma', precio: 1200, emoji: '🔒', tipo: 'herramienta', equipable: true, desc: 'Sistema antirrobo para vehículo RP' },
+    ],
+  },
+};
+
+const CATS = Object.keys(CATALOGO);
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function findItemGlobal(query) {
+  query = query.toLowerCase().trim();
+  for (const cat of Object.values(CATALOGO)) {
+    const found = cat.items.find(i =>
+      i.id === query ||
+      i.nombre.toLowerCase() === query ||
+      i.nombre.toLowerCase().includes(query),
+    );
+    if (found) return found;
+  }
+  return null;
+}
+
+function getItemFromInv(inv, query) {
+  query = query.toLowerCase().trim();
+  return inv.items.find(i =>
+    i.id === query ||
+    (i.nombre && i.nombre.toLowerCase() === query) ||
+    (i.nombre && i.nombre.toLowerCase().includes(query)),
+  ) || null;
+}
+
+function barraVital(val, max = 100, len = 10) {
+  const v = Math.min(Math.max(val, 0), max);
+  const llenos = Math.round((v / max) * len);
+  const color = v > 60 ? '🟩' : v > 30 ? '🟨' : '🟥';
+  return color.repeat(llenos) + '⬛'.repeat(len - llenos);
+}
+
+function catEmbed(catKey) {
+  const cat = CATALOGO[catKey];
+  const lines = cat.items.map(i =>
+    `${i.emoji} **${i.nombre}** — ${formatMoney(i.precio)} · *${i.desc}*`,
+  ).join('\n');
+
+  const em = new EmbedBuilder()
+    .setColor(config.colors.gold)
+    .setTitle(`🏪 Los Santos Marketplace — ${cat.emoji} ${cat.label}`)
+    .setDescription(lines.slice(0, 3900))
+    .setFooter({ text: `📦 /comprar [item]  ·  💰 /vender [item]  ·  🎯 /usar [item]  ·  ❤️ /vitales` })
+    .setTimestamp();
+  addImage(em, 'tienda');
+  return em;
+}
+
+function buildSelectMenu(seleccionado = null) {
+  const opts = CATS.map(k =>
+    new StringSelectMenuOptionBuilder()
+      .setLabel(CATALOGO[k].label)
+      .setValue(k)
+      .setDescription(CATALOGO[k].descripcion.slice(0, 100))
+      .setEmoji(CATALOGO[k].emoji)
+      .setDefault(k === seleccionado),
+  );
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('tienda_cat')
+      .setPlaceholder('🛒 Selecciona una categoría...')
+      .addOptions(opts),
+  );
+}
+
+// ─── Slash commands ───────────────────────────────────────────────────────────
+const data = [
+  new SlashCommandBuilder()
+    .setName('tienda')
+    .setDescription('🏪 Abre el Los Santos Marketplace')
+    .addStringOption(o => o
+      .setName('categoria')
+      .setDescription('Ir directamente a una categoría')
+      .setRequired(false)
+      .addChoices(...CATS.map(k => ({ name: `${CATALOGO[k].emoji} ${CATALOGO[k].label}`, value: k })))),
+
+  new SlashCommandBuilder()
+    .setName('comprar')
+    .setDescription('💳 Comprar un item de la tienda')
+    .addStringOption(o => o.setName('item').setDescription('Nombre del item').setRequired(true).setMaxLength(64))
+    .addIntegerOption(o => o.setName('cantidad').setDescription('Cantidad (def: 1)').setRequired(false).setMinValue(1).setMaxValue(50)),
+
+  new SlashCommandBuilder()
+    .setName('vender')
+    .setDescription('💰 Vender un item de tu inventario')
+    .addStringOption(o => o.setName('item').setDescription('Nombre del item').setRequired(true).setMaxLength(64))
+    .addIntegerOption(o => o.setName('cantidad').setDescription('Cantidad (def: 1)').setRequired(false).setMinValue(1)),
+
+  new SlashCommandBuilder()
+    .setName('vitales')
+    .setDescription('❤️ Ver tus estadísticas vitales (salud, hambre, sed)'),
+];
+
+// ─── Execute ──────────────────────────────────────────────────────────────────
+async function execute(interaction, client) {
+  const cmd = interaction.commandName;
+
+  // ── /tienda ─────────────────────────────────────────────────────────────────
+  if (cmd === 'tienda') {
+    const catFija = interaction.options.getString('categoria');
+    const catInicial = catFija || 'comida';
+
+    const msg = await interaction.reply({
+      embeds: [catEmbed(catInicial)],
+      components: [buildSelectMenu(catInicial)],
+      fetchReply: true,
+    });
+
+    const collector = msg.createMessageComponentCollector({
+      componentType: ComponentType.StringSelect,
+      filter: i => i.user.id === interaction.user.id && i.customId === 'tienda_cat',
+      time: 120_000,
+    });
+
+    collector.on('collect', async i => {
+      await i.update({ embeds: [catEmbed(i.values[0])], components: [buildSelectMenu(i.values[0])] });
+    });
+
+    collector.on('end', () => {
+      interaction.editReply({ components: [] }).catch(() => {});
+    });
+
+    return;
+  }
+
+  // ── /comprar ─────────────────────────────────────────────────────────────────
+  if (cmd === 'comprar') {
+    const player = await getPlayer(interaction.user.id, interaction.user.username);
+    if (!player.personajeCreado) return interaction.reply({ embeds: [E.warn('Sin personaje', 'Crea tu personaje con `/personaje crear`.')], ephemeral: true });
+
+    const nombreInput = interaction.options.getString('item');
+    const cantidad    = interaction.options.getInteger('cantidad') || 1;
+    const item = findItemGlobal(nombreInput);
+
+    if (!item) {
+      return interaction.reply({
+        embeds: [E.err('Item no encontrado', `No existe **"${nombreInput}"** en la tienda.\nUsa \`/tienda\` para ver el catálogo completo.`)],
+        ephemeral: true,
+      });
+    }
+
+    const total = item.precio * cantidad;
+    if (player.cash < total) {
+      return interaction.reply({
+        embeds: [E.err('Fondos insuficientes', `Necesitas **${formatMoney(total)}** en efectivo.\nTienes: ${formatMoney(player.cash)}`)],
+        ephemeral: true,
+      });
+    }
+
+    const inv = await getInventory(interaction.user.id);
+
+    // Comprobar slots disponibles
+    const tieneYa = inv.items.find(i => i.id === item.id);
+    if (!tieneYa && inv.items.length >= inv.capacidadMax) {
+      return interaction.reply({
+        embeds: [E.err('Inventario lleno', `Tu inventario está lleno (${inv.capacidadMax} slots usados).`)],
+        ephemeral: true,
+      });
+    }
+
+    // Compra especial: radio policial gratis solo para policías
+    if (item.id === 'radio_policial') {
+      const gc = await require('../database/models/GuildConfig').findOne({ guildId: interaction.guildId });
+      const rolesPolicia = [config.roles.policia, config.roles.sheriff, gc?.roles?.policia].filter(Boolean);
+      const esAgente = interaction.member.permissions.has('Administrator') ||
+        rolesPolicia.some(r => interaction.member.roles.cache.has(r));
+      if (!esAgente) {
+        return interaction.reply({ embeds: [E.err('Sin autorización', 'La radio policial solo está disponible para agentes autorizados.')], ephemeral: true });
+      }
+    }
+
+    inv.addItem({ id: item.id, nombre: item.nombre, emoji: item.emoji, tipo: item.tipo, precio: item.precio, descripcion: item.desc, efecto: item.efecto || {}, equipable: item.equipable || false, equipado: false, metadata: {} }, cantidad);
+    player.cash -= total;
+
+    await inv.save();
+    await player.save();
+
+    return interaction.reply({
+      embeds: [new EmbedBuilder()
+        .setColor(config.colors.success)
+        .setTitle('✅ Compra realizada')
+        .setDescription(`${item.emoji} Compraste **${cantidad}x ${item.nombre}**`)
+        .addFields(
+          { name: '💰 Pagado',       value: formatMoney(total),                   inline: true },
+          { name: '💵 Cash restante', value: formatMoney(player.cash),            inline: true },
+          { name: '🎒 Inventario',   value: `${inv.countItems()}/${inv.capacidadMax} slots`, inline: true },
+          { name: '📦 Item',         value: item.desc,                            inline: false },
+        )
+        .setFooter({ text: item.tipo === 'comida' || item.tipo === 'bebida' || item.tipo === 'medkit' ? 'Usa el item con /usar ' + item.nombre : 'Item guardado en tu inventario' })
+        .setTimestamp()],
+    });
+  }
+
+  // ── /vender ──────────────────────────────────────────────────────────────────
+  if (cmd === 'vender') {
+    const player = await getPlayer(interaction.user.id, interaction.user.username);
+    if (!player.personajeCreado) return interaction.reply({ embeds: [E.warn('Sin personaje', 'Crea tu personaje.')], ephemeral: true });
+
+    const nombreInput = interaction.options.getString('item');
+    const cantidad    = interaction.options.getInteger('cantidad') || 1;
+    const inv = await getInventory(interaction.user.id);
+    const invItem = getItemFromInv(inv, nombreInput);
+
+    if (!invItem) {
+      return interaction.reply({
+        embeds: [E.err('Item no encontrado', `No tienes **"${nombreInput}"** en el inventario.\nUsa \`/inventario\` para ver tus items.`)],
+        ephemeral: true,
+      });
+    }
+    if (cantidad > invItem.cantidad) {
+      return interaction.reply({
+        embeds: [E.err('Cantidad insuficiente', `Solo tienes **${invItem.cantidad}x** ${invItem.nombre}.`)],
+        ephemeral: true,
+      });
+    }
+
+    // Documentos no se pueden vender
+    if (invItem.tipo === 'documento') {
+      return interaction.reply({
+        embeds: [E.warn('No vendible', 'Los documentos oficiales no se pueden vender.')],
+        ephemeral: true,
+      });
+    }
+
+    const precioBase = findItemGlobal(invItem.nombre)?.precio || invItem.valor || invItem.precio || 50;
+    const precioVenta = Math.floor(precioBase * 0.5);
+    const total = precioVenta * cantidad;
+
+    inv.removeItem(invItem.id, cantidad);
+    player.cash += total;
+    await inv.save();
+    await player.save();
+
+    return interaction.reply({
+      embeds: [new EmbedBuilder()
+        .setColor(config.colors.gold)
+        .setTitle('💰 Venta realizada')
+        .setDescription(`${invItem.emoji || '📦'} Vendiste **${cantidad}x ${invItem.nombre}** por **${formatMoney(total)}**\n*Precio de venta: 50% del original*`)
+        .addFields({ name: '💵 Cash actual', value: formatMoney(player.cash), inline: true })
+        .setTimestamp()],
+    });
+  }
+
+  // ── /usar ────────────────────────────────────────────────────────────────────
+  if (cmd === 'usar') {
+    const player = await getPlayer(interaction.user.id, interaction.user.username);
+    if (!player.personajeCreado) return interaction.reply({ embeds: [E.warn('Sin personaje', 'Crea tu personaje.')], ephemeral: true });
+    if (player.muerto) return interaction.reply({ embeds: [E.err('Muerto', 'No puedes usar items estando muerto. Llama al 911 o usa un desfibrilador.')], ephemeral: true });
+
+    const nombreInput = interaction.options.getString('item');
+    const inv = await getInventory(interaction.user.id);
+    const invItem = getItemFromInv(inv, nombreInput);
+
+    if (!invItem) {
+      return interaction.reply({
+        embeds: [E.err('Item no encontrado', `No tienes **"${nombreInput}"** en el inventario.`)],
+        ephemeral: true,
+      });
+    }
+
+    const efecto = invItem.efecto || {};
+    const tiposUsables = ['comida', 'bebida', 'medkit', 'medicina'];
+
+    if (!tiposUsables.includes(invItem.tipo)) {
+      return interaction.reply({
+        embeds: [E.warn('No usable', `**${invItem.nombre}** no es un item consumible.\nLos equipables se gestionan con \`/equipar\`.`)],
+        ephemeral: true,
+      });
+    }
+
+    // Aplicar efectos
+    const cambios = [];
+    const antes = { salud: player.salud, hambre: player.hambre, sed: player.sed };
+
+    if (efecto.salud)   { player.salud  = Math.min(100, player.salud  + efecto.salud);  cambios.push(`❤️ Salud: +${efecto.salud}`);  }
+    if (efecto.hambre)  { player.hambre = Math.min(100, player.hambre + efecto.hambre); cambios.push(`🍔 Hambre: +${efecto.hambre}`); }
+    if (efecto.sed)     { player.sed    = Math.min(100, player.sed    + efecto.sed);    cambios.push(`💧 Sed: +${efecto.sed}`);     }
+    if (efecto.revivir && player.muerto) {
+      player.muerto = false;
+      player.enHospital = false;
+      player.tiempoHospital = null;
+      cambios.push('🔴→🟢 ¡REVIVIDO!');
+    }
+
+    if (!cambios.length) {
+      return interaction.reply({ embeds: [E.warn('Sin efecto', 'Este item no tiene efectos aplicables ahora mismo.')], ephemeral: true });
+    }
+
+    inv.removeItem(invItem.id, 1);
+    await inv.save();
+    await player.save();
+
+    return interaction.reply({
+      embeds: [new EmbedBuilder()
+        .setColor(
+          invItem.tipo === 'medkit' || invItem.tipo === 'medicina' ? config.colors.success :
+          invItem.tipo === 'comida' ? config.colors.gold : config.colors.info,
+        )
+        .setTitle(`${invItem.emoji || '✅'} Usaste: ${invItem.nombre}`)
+        .setDescription(cambios.map(c => `> ${c}`).join('\n'))
+        .addFields(
+          { name: '❤️ Salud',  value: `${barraVital(antes.salud)} → ${barraVital(player.salud)} **${Math.floor(player.salud)}%**`, inline: false },
+          { name: '🍔 Hambre', value: `${barraVital(antes.hambre)} → ${barraVital(player.hambre)} **${Math.floor(player.hambre)}%**`, inline: false },
+          { name: '💧 Sed',    value: `${barraVital(antes.sed)} → ${barraVital(player.sed)} **${Math.floor(player.sed)}%**`, inline: false },
+        )
+        .setFooter({ text: `Inventario: ${inv.countItems()}/${inv.capacidadMax} slots restantes` })
+        .setTimestamp()],
+    });
+  }
+
+  // ── /vitales ─────────────────────────────────────────────────────────────────
+  if (cmd === 'vitales') {
+    const player = await getPlayer(interaction.user.id, interaction.user.username);
+    if (!player.personajeCreado) return interaction.reply({ embeds: [E.warn('Sin personaje', 'Crea tu personaje.')], ephemeral: true });
+
+    const salud  = Math.floor(player.salud);
+    const hambre = Math.floor(player.hambre);
+    const sed    = Math.floor(player.sed);
+
+    // Recomendaciones automáticas
+    const consejos = [];
+    if (hambre < 30)  consejos.push(`🍔 Hambre baja — Compra comida en \`/tienda\` (categoría Comida)`);
+    if (sed < 30)     consejos.push(`💧 Sed baja — Compra bebidas en \`/tienda\` (categoría Bebidas)`);
+    if (salud < 50)   consejos.push(`❤️ Salud baja — Usa \`/usar Botiquín básico\` o ve al hospital`);
+    if (player.muerto) consejos.push(`💀 Estás muerto — Usa un \`Desfibrilador\` o llama al 911`);
+
+    const estadoGeneral = player.muerto ? '💀 **MUERTO**'
+      : salud < 20 || hambre < 10 || sed < 10 ? '🔴 **CRÍTICO**'
+      : salud < 50 || hambre < 30 || sed < 30 ? '🟡 **REGULAR**'
+      : '🟢 **ÓPTIMO**';
+
+    const embed = new EmbedBuilder()
+      .setColor(player.muerto ? config.colors.danger : salud < 30 ? config.colors.warning : config.colors.success)
+      .setTitle(`❤️ Estadísticas vitales — ${player.getFullName()}`)
+      .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
+      .addFields(
+        { name: '📊 Estado general', value: estadoGeneral, inline: false },
+        { name: '❤️ Salud',  value: `${barraVital(salud)}  **${salud}%**`,  inline: false },
+        { name: '🍔 Hambre', value: `${barraVital(hambre)} **${hambre}%**`, inline: false },
+        { name: '💧 Sed',    value: `${barraVital(sed)}    **${sed}%**`,    inline: false },
+      )
+      .setTimestamp();
+
+    if (consejos.length) embed.addFields({ name: '💡 Recomendaciones', value: consejos.join('\n'), inline: false });
+    if (player.enHospital && player.tiempoHospital) {
+      const resta = player.tiempoHospital.getTime() - Date.now();
+      if (resta > 0) embed.addFields({ name: '🏥 En el hospital', value: `Sales en ${Math.ceil(resta / 60000)} min`, inline: true });
+    }
+
+    embed.setFooter({ text: 'Usa /usar [item] para consumir items · /tienda para comprar' });
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  // ── /dar-item ─────────────────────────────────────────────────────────────────
+  if (cmd === 'dar-item') {
+    const player = await getPlayer(interaction.user.id, interaction.user.username);
+    if (!player.personajeCreado) return interaction.reply({ embeds: [E.warn('Sin personaje', '')], ephemeral: true });
+
+    const target      = interaction.options.getUser('usuario');
+    const nombreInput = interaction.options.getString('item');
+    const cantidad    = interaction.options.getInteger('cantidad') || 1;
+
+    if (target.id === interaction.user.id) return interaction.reply({ embeds: [E.err('Error', 'No puedes darte items a ti mismo.')], ephemeral: true });
+
+    const invOrigen = await getInventory(interaction.user.id);
+    const invItem   = getItemFromInv(invOrigen, nombreInput);
+
+    if (!invItem) return interaction.reply({ embeds: [E.err('No encontrado', `No tienes "${nombreInput}" en el inventario.`)], ephemeral: true });
+    if (invItem.cantidad < cantidad) return interaction.reply({ embeds: [E.err('Insuficiente', `Solo tienes ${invItem.cantidad}x ${invItem.nombre}.`)], ephemeral: true });
+
+    const targetPlayer = await getPlayer(target.id, target.username);
+    if (!targetPlayer.personajeCreado) return interaction.reply({ embeds: [E.err('Sin personaje', 'Ese jugador no tiene personaje.')], ephemeral: true });
+
+    const invDestino = await getInventory(target.id);
+    if (invDestino.items.length >= invDestino.capacidadMax) {
+      return interaction.reply({ embeds: [E.err('Inventario lleno', 'El inventario del destinatario está lleno.')], ephemeral: true });
+    }
+
+    invOrigen.removeItem(invItem.id, cantidad);
+    invDestino.addItem({ id: invItem.id, nombre: invItem.nombre, emoji: invItem.emoji, tipo: invItem.tipo, precio: invItem.precio, descripcion: invItem.descripcion, efecto: invItem.efecto || {}, equipable: invItem.equipable || false, equipado: false, metadata: {} }, cantidad);
+
+    await invOrigen.save();
+    await invDestino.save();
+
+    try {
+      await client.users.fetch(target.id).then(u => u.send(
+        `🎁 **${player.getFullName()}** te ha dado **${cantidad}x ${invItem.emoji} ${invItem.nombre}**`,
+      ));
+    } catch {}
+
+    return interaction.reply({
+      embeds: [E.ok('Item enviado', `${invItem.emoji} Diste **${cantidad}x ${invItem.nombre}** a **${targetPlayer.getFullName()}**`)],
+    });
+  }
+}
+
+// ─── Prefix commands ──────────────────────────────────────────────────────────
+const prefixCommands = [
+  {
+    name: 'tienda',
+    aliases: ['shop', 'store', 'market', 'mercado'],
+    description: '!tienda [categoria]',
+    async run(message, args) {
+      const catKey = args[0]?.toLowerCase();
+      const catInicial = (catKey && CATALOGO[catKey]) ? catKey : 'comida';
+
+      const msg = await message.reply({
+        embeds: [catEmbed(catInicial)],
+        components: [buildSelectMenu(catInicial)],
+      });
+
+      const collector = msg.createMessageComponentCollector({
+        componentType: ComponentType.StringSelect,
+        filter: i => i.user.id === message.author.id && i.customId === 'tienda_cat',
+        time: 120_000,
+      });
+
+      collector.on('collect', async i => {
+        await i.update({ embeds: [catEmbed(i.values[0])], components: [buildSelectMenu(i.values[0])] });
+      });
+
+      collector.on('end', () => {
+        msg.edit({ components: [] }).catch(() => {});
+      });
+    },
+  },
+  {
+    name: 'comprar',
+    aliases: ['buy', 'c'],
+    description: '!comprar [item] [cantidad]',
+    async run(message, args) {
+      if (!args.length) return message.reply('❌ Uso: `!comprar [nombre del item] [cantidad]`');
+      const cantidad = parseInt(args[args.length - 1]) || 1;
+      const nombre   = isNaN(parseInt(args[args.length - 1])) ? args.join(' ') : args.slice(0, -1).join(' ');
+      const item     = findItemGlobal(nombre);
+      if (!item) return message.reply(`❌ Item "${nombre}" no encontrado. Usa \`!tienda\` para ver el catálogo.`);
+
+      const player = await getPlayer(message.author.id, message.author.username);
+      if (!player.personajeCreado) return message.reply('Sin personaje.');
+      const total = item.precio * cantidad;
+      if (player.cash < total) return message.reply(`❌ Necesitas ${formatMoney(total)}. Tienes: ${formatMoney(player.cash)}`);
+
+      const inv = await getInventory(message.author.id);
+      inv.addItem({ id: item.id, nombre: item.nombre, emoji: item.emoji, tipo: item.tipo, precio: item.precio, descripcion: item.desc, efecto: item.efecto || {}, equipable: item.equipable || false, equipado: false, metadata: {} }, cantidad);
+      player.cash -= total;
+      await inv.save();
+      await player.save();
+      return message.reply(`${item.emoji} Compraste **${cantidad}x ${item.nombre}** por **${formatMoney(total)}**. Cash: ${formatMoney(player.cash)}`);
+    },
+  },
+  {
+    name: 'usar',
+    aliases: ['use', 'comer', 'beber'],
+    description: '!usar [item] — Usar item del inventario',
+    async run(message, args) {
+      if (!args.length) return message.reply('❌ Uso: `!usar [nombre del item]`');
+      const nombre = args.join(' ');
+      const player = await getPlayer(message.author.id, message.author.username);
+      if (!player.personajeCreado) return message.reply('Sin personaje.');
+      const inv = await getInventory(message.author.id);
+      const invItem = getItemFromInv(inv, nombre);
+      if (!invItem) return message.reply(`❌ No tienes "${nombre}" en el inventario.`);
+
+      const efecto = invItem.efecto || {};
+      const cambios = [];
+      if (efecto.salud)  { player.salud  = Math.min(100, player.salud  + efecto.salud);  cambios.push(`+${efecto.salud} salud`); }
+      if (efecto.hambre) { player.hambre = Math.min(100, player.hambre + efecto.hambre); cambios.push(`+${efecto.hambre} hambre`); }
+      if (efecto.sed)    { player.sed    = Math.min(100, player.sed    + efecto.sed);    cambios.push(`+${efecto.sed} sed`); }
+      if (!cambios.length) return message.reply('❌ Este item no es consumible aquí.');
+
+      inv.removeItem(invItem.id, 1);
+      await inv.save();
+      await player.save();
+      return message.reply(`${invItem.emoji} Usaste **${invItem.nombre}**: ${cambios.join(', ')} · Salud: ${Math.floor(player.salud)}% | Hambre: ${Math.floor(player.hambre)}% | Sed: ${Math.floor(player.sed)}%`);
+    },
+  },
+  {
+    name: 'vitales',
+    aliases: ['vida', 'stats', 'salud', 'hambre'],
+    description: '!vitales — Ver estadísticas vitales',
+    async run(message) {
+      const player = await getPlayer(message.author.id, message.author.username);
+      if (!player.personajeCreado) return message.reply('Sin personaje.');
+      const s = Math.floor(player.salud), h = Math.floor(player.hambre), se = Math.floor(player.sed);
+      const embed = new EmbedBuilder().setColor(config.colors.success)
+        .setTitle(`❤️ Vitales de ${player.getFullName()}`)
+        .addFields(
+          { name: '❤️ Salud',  value: `${barraVital(s)} ${s}%`,  inline: false },
+          { name: '🍔 Hambre', value: `${barraVital(h)} ${h}%`,  inline: false },
+          { name: '💧 Sed',    value: `${barraVital(se)} ${se}%`, inline: false },
+        ).setTimestamp();
+      return message.reply({ embeds: [embed] });
+    },
+  },
+];
+
+module.exports = { data, execute, prefixCommands, CATALOGO, findItemGlobal };
