@@ -440,6 +440,135 @@ async function ejecutarMinijuego(interaction, player, robo, inv) {
   }
 }
 
+// ─── Minijuego para prefix (!atracar) ─────────────────────────────────────────
+async function ejecutarMinijuegoPrefix(message, player, robo, inv) {
+  const fases = robo.nivel === 'mayor' ? 3 : robo.nivel === 'mediano' ? 2 : 1;
+
+  const colores = ['🔴', '🟡', '🟢', '🔵'];
+  const empezar = async (faseActual) => {
+    const correcto = Math.floor(Math.random() * 4);
+    const btns = colores.map((c, i) =>
+      new ButtonBuilder().setCustomId(`robo_${i}`).setLabel(c).setStyle(i === correcto ? ButtonStyle.Success : ButtonStyle.Danger).setDisabled(false)
+    );
+    // Randomizar orden
+    const shuffled = btns.sort(() => Math.random() - 0.5);
+
+    const embed = new EmbedBuilder()
+      .setColor(0x1a1a2e)
+      .setTitle(`🔧 Fase ${faseActual}/${fases} — ${robo.emoji} ${robo.nombre}`)
+      .setDescription(`Elige el cable **correcto** para desactivar la alarma.\n*${colores.length} cables, solo uno es el correcto.*\n\nTienes **15 segundos**.`)
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(shuffled.map(b => ButtonBuilder.from(b)));
+    const sent = await message.channel.send({ embeds: [embed], components: [row] });
+
+    try {
+      const click = await sent.awaitMessageComponent({ filter: i => i.user.id === message.author.id, time: 15000 });
+      const idx = parseInt(click.customId.replace('robo_', ''));
+      await click.deferUpdate();
+
+      if (idx === correcto) {
+        if (faseActual < fases) {
+          sent.edit({ embeds: [new EmbedBuilder().setColor(0x22c55e).setDescription(`✅ Fase ${faseActual} superada. Prepárate para la siguiente.`).setTimestamp()], components: [] });
+          await new Promise(r => setTimeout(r, 1500));
+          return empezar(faseActual + 1);
+        }
+        // Todas las fases completadas → ÉXITO
+        const botín = rand(robo.rewardMin, robo.rewardMax);
+        player.dineroSucio += botín;
+        player.robosRealizados++;
+        player.addXP(rand(30, 80));
+        await player.save();
+
+        await enviarAlertaPolicia(message, robo, player, false);
+
+        return sent.edit({
+          embeds: [new EmbedBuilder()
+            .setColor(0x00ff88)
+            .setTitle(`✅ Atraco exitoso — ${robo.emoji} ${robo.nombre}`)
+            .setDescription(`Has completado las **${fases} fases** con éxito.\n💰 Botín: **${formatMoney(botín)}** (dinero sucio)`)
+            .setTimestamp()],
+          components: [],
+        });
+      }
+
+      await sent.delete().catch(() => {});
+      const daño = rand(15, 35);
+      player.salud = Math.max(0, player.salud - daño);
+      player.arrestos++;
+      await player.save();
+      await enviarAlertaPolicia(message, robo, player, true);
+      return message.channel.send({ embeds: [falloEmbed(robo, player, 'botón')] });
+    } catch {
+      await sent.delete().catch(() => {});
+      const daño = rand(15, 35);
+      player.salud = Math.max(0, player.salud - daño);
+      player.arrestos++;
+      await player.save();
+      return message.channel.send({ embeds: [falloEmbed(robo, player, 'tiempo')] });
+    }
+  };
+
+  // Confirmación
+  const confEmbed = new EmbedBuilder()
+    .setColor(0x1a1a2e)
+    .setTitle(`${robo.emoji} Atraco — ${robo.nombre}`)
+    .setDescription(
+      `**Nivel:** ${robo.nivel.toUpperCase()}\n` +
+      `**Fases:** ${fases}\n` +
+      `**Botín:** ${formatMoney(robo.rewardMin)} — ${formatMoney(robo.rewardMax)}\n` +
+      `**Riesgo:** ${Math.round(robo.failChance * 100)}%\n\n` +
+      `_Tendrás que superar **${fases} fases** de desactivación de alarmas._`
+    )
+    .setTimestamp();
+
+  const confRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('robo_si').setLabel('🔫 Iniciar atraco').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('robo_no').setLabel('❌ Cancelar').setStyle(ButtonStyle.Secondary),
+  );
+
+  const sent = await message.channel.send({ embeds: [confEmbed], components: [confRow] });
+  try {
+    const conf = await sent.awaitMessageComponent({ filter: i => i.user.id === message.author.id, time: 30000 });
+    if (conf.customId === 'robo_no') {
+      player.setCooldown(`rob_${robo.nombre}`, null);
+      await player.save();
+      return conf.update({ embeds: [E.info('Atraco cancelado', 'Has cancelado el atraco.')], components: [] });
+    }
+    await conf.deferUpdate();
+    sent.edit({ embeds: [new EmbedBuilder().setColor(0xf59e0b).setDescription('🔧 Preparando el atraco...').setTimestamp()], components: [] });
+    await new Promise(r => setTimeout(r, 1000));
+    await empezar(1);
+  } catch {
+    sent.edit({ embeds: [E.err('Tiempo agotado', 'No confirmaste a tiempo.')], components: [] });
+  }
+}
+
+async function enviarAlertaPolicia(message, robo, player, fallo) {
+  try {
+    const gc = await GuildConfig.findOne({ guildId: message.guild.id });
+    const chId = gc?.canales?.policia || gc?.canales?.emergencias;
+    if (!chId) return;
+    const ch = await message.guild.channels.fetch(chId).catch(() => null);
+    if (!ch) return;
+
+    const embed = new EmbedBuilder()
+      .setColor(fallo ? 0xef4444 : 0xf59e0b)
+      .setTitle(fallo ? '🚨 ALARMA — Atraco fallido' : '🔔 Posible atraco en curso')
+      .setDescription(
+        `**Establecimiento:** ${robo.emoji} ${robo.nombre}\n` +
+        `**Sospechoso:** ${message.author.tag}\n` +
+        `**Nivel:** ${robo.nivel.toUpperCase()}\n` +
+        `**Estado:** ${fallo ? '❌ Fallido — Sospechoso arrestado' : '⚠️ En curso — Posible huida'}` +
+        (fallo ? '' : `\n**Botín:** ${formatMoney(rand(robo.rewardMin, robo.rewardMax))}`)
+      )
+      .setTimestamp()
+      .setFooter({ text: 'AmericanRP · Alerta de robos' });
+
+    await ch.send({ content: '🚨 @here', embeds: [embed] }).catch(() => {});
+  } catch {}
+}
+
 function falloEmbed(robo, player, motivo) {
   const motivos = {
     tiempo: '⏰ No actuaste a tiempo. ¡La policía te atrapó!',
@@ -645,31 +774,12 @@ const prefixCommands = [
         if (remaining > 0) return message.reply(`⏳ Espera **${formatCooldown(remaining)}** para volver a atracar ${robo.nombre}.`);
       }
 
-      // Versión simplificada para prefix (sin minijuego interactivo)
       player.setCooldown(`rob_${robo.nombre}`, new Date());
-
-      const exito = Math.random() > robo.failChance;
-      if (!exito) {
-        const daño = rand(15, 35);
-        player.salud = Math.max(0, player.salud - daño);
-        player.arrestos++;
-        await player.save();
-        return message.reply({ embeds: [falloEmbed(robo, player, 'policía')] });
-      }
-
-      const botín = rand(robo.rewardMin, robo.rewardMax);
-      player.dineroSucio += botín;
-      player.robosRealizados++;
-      player.addXP(rand(30, 80));
       await player.save();
 
-      return message.reply({
-        embeds: [new EmbedBuilder()
-          .setColor(0x00ff88)
-          .setTitle(`✅ Atraco exitoso — ${robo.emoji} ${robo.nombre}`)
-          .setDescription(`Escapaste con **${formatMoney(botín)}** en dinero sucio.`)
-          .setTimestamp()],
-      });
+      // Minijuego interactivo con botones
+      const inv = await getInventory(message.author.id);
+      await ejecutarMinijuegoPrefix(message, player, robo, inv);
     },
   },
   {
