@@ -315,12 +315,13 @@ async function handleSecurity(message) {
 
   if (isStaff(message.member, config)) return;
 
-  if (await handleAntiAd(message, sec)) return;
-  if (await handleAntiRepeat(message, sec)) return;
-  if (await handleAntiLinks(message, sec)) return;
-  if (await handleAntiMentions(message, sec)) return;
-  if (await handleAntiImageSpam(message, sec)) return;
-  if (await handleAntiSpam(message, sec)) return;
+  if (await handleAntiAd(message, sec)) { console.log('[Security] antiAd triggered:', message.author.tag, message.content?.slice(0,50)); return; }
+  if (await handleAntiRepeat(message, sec)) { console.log('[Security] antiRepeat triggered:', message.author.tag, message.content?.slice(0,50)); return; }
+  if (await handleAntiRepeat(message, sec)) { console.log('[Security] antiRepeat triggered:', message.author.tag, message.content?.slice(0,50)); return; }
+  if (await handleAntiLinks(message, sec)) { console.log('[Security] antiLinks triggered:', message.author.tag, message.content?.slice(0,50)); return; }
+  if (await handleAntiMentions(message, sec)) { console.log('[Security] antiMentions triggered:', message.author.tag); return; }
+  if (await handleAntiImageSpam(message, sec)) { console.log('[Security] antiImage triggered:', message.author.tag); return; }
+  if (await handleAntiSpam(message, sec)) { console.log('[Security] antiSpam triggered:', message.author.tag); return; }
 }
 
 module.exports = { handleSecurity, checkRaid, isStaff };
