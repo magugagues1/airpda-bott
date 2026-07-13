@@ -14,15 +14,6 @@ const CFG = {
   TIMEOUT_MENTION:   5 * 60_000,
   TIMEOUT_AD:       60 * 60_000,
   BAD_WORDS: ['pornografi', 'pornograph', 'onlyfans', 'hijo de puta', 'hijoputa', 'subnormal', 'mongolo', 'retrasado'],
-  AD_KEYWORDS: [
-    'únete a nuestro', 'unete a nuestro',
-    'join our discord', 'join our server',
-    'te invito a unirte',
-    'mejor servidor de', 'mejor server de',
-    'gratis aquí:', 'gratis aca:',
-    'consíguelo aquí', 'consiguelo aqui',
-    'entra ya:', 'entra ya ',
-  ],
   LOG_CHANNEL_ID: '1523771792907436125',
 };
 
@@ -131,33 +122,17 @@ async function handleAntiMentions(message, sec) {
   return true;
 }
 
-async function handleAntiAd(message, sec) {
+// ─── Anti-Insultos (solo palabras malsonantes, sin publicidad) ────────────
+async function handleAntiInsult(message, sec) {
   if (sec.antiLinks === false) return false;
   const content = (message.content || '').toLowerCase();
-  const hasInvite = /discord\.gg\/|discord\.com\/invite\//i.test(content);
-  const hasAdKeyword = CFG.AD_KEYWORDS.some(kw => content.includes(kw));
   const hasBadWord = CFG.BAD_WORDS.some(w => content.includes(w));
+  if (!hasBadWord) return false;
 
-  // Requerir invite + keyword, o 2+ keywords, o bad word para actuar
-  const adScore = (hasInvite ? 2 : 0) + (hasAdKeyword ? 1 : 0) + (hasBadWord ? 3 : 0);
-
-  if (adScore < 2 && !hasBadWord) return false;
-
-  if (hasBadWord && !hasInvite && !hasAdKeyword) {
-    // Solo palabra mala sin publicidad: warn + borrar, sin timeout
-    await message.delete().catch(() => {});
-    const embed = makeEmbed('🤬 Lenguaje inapropiado', `<@${message.author.id}> evita ese lenguaje.`, 0xf59e0b);
-    await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 6000));
-    return true;
-  }
-
-  const evidence = await captureEvidence(message, hasBadWord ? 'Lenguaje inapropiado' : 'Publicidad').catch(() => null);
-  await deleteUserMessages(message.channel, message.author.id);
-  await muteUser(message.member, hasBadWord ? CFG.TIMEOUT_SPAM : CFG.TIMEOUT_AD, hasBadWord ? 'Anti-BadWords' : 'Anti-Publicidad');
-  const motivo = hasBadWord ? 'lenguaje inapropiado' : hasInvite ? 'publicidad con invitación' : 'publicidad';
-  const embed = makeEmbed(hasBadWord ? 'Contenido inapropiado' : 'Publicidad bloqueada',
-    `<@${message.author.id}> silenciado **${hasBadWord ? '5' : '60'} min** por ${motivo}.`);
-  await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
+  const evidence = await captureEvidence(message, 'Lenguaje inapropiado').catch(() => null);
+  await message.delete().catch(() => {});
+  const embed = makeEmbed('🤬 Lenguaje inapropiado', `<@${message.author.id}> evita ese lenguaje.`, 0xf59e0b);
+  await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 6000));
   await secLog(message.guild, embed, evidence);
   return true;
 }
@@ -315,7 +290,7 @@ async function handleSecurity(message) {
 
   if (isStaff(message.member, config)) return;
 
-  if (await handleAntiAd(message, sec)) { console.log('[Security] antiAd triggered:', message.author.tag, message.content?.slice(0,50)); return; }
+  if (await handleAntiInsult(message, sec)) { console.log('[Security] antiInsult triggered:', message.author.tag, message.content?.slice(0,50)); return; }
   if (await handleAntiRepeat(message, sec)) { console.log('[Security] antiRepeat triggered:', message.author.tag, message.content?.slice(0,50)); return; }
   if (await handleAntiRepeat(message, sec)) { console.log('[Security] antiRepeat triggered:', message.author.tag, message.content?.slice(0,50)); return; }
   if (await handleAntiLinks(message, sec)) { console.log('[Security] antiLinks triggered:', message.author.tag, message.content?.slice(0,50)); return; }
