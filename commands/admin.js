@@ -67,7 +67,10 @@ const data = new SlashCommandBuilder()
     .addBooleanOption(o => o.setName('estado').setDescription('¿Buscado?').setRequired(true)))
   .addSubcommand(s => s.setName('arrestar').setDescription('Arrestar a un jugador (encarcelar)')
     .addUserOption(o => o.setName('usuario').setDescription('Jugador').setRequired(true))
-    .addIntegerOption(o => o.setName('tiempo').setDescription('Tiempo en minutos').setRequired(true).setMinValue(1).setMaxValue(1440)));
+    .addIntegerOption(o => o.setName('tiempo').setDescription('Tiempo en minutos').setRequired(true).setMinValue(1).setMaxValue(1440)))
+  .addSubcommand(s => s.setName('antiraid').setDescription('Activar/desactivar sistema anti-raid')
+    .addStringOption(o => o.setName('estado').setDescription('on/off').setRequired(true)
+      .addChoices({ name: '🟢 Activar', value: 'on' }, { name: '🔴 Desactivar', value: 'off' })));
 
 async function execute(interaction, client) {
   const sub = interaction.options.getSubcommand();
@@ -379,6 +382,54 @@ async function execute(interaction, client) {
 
     return interaction.reply({ embeds: [E.warn('Arrestado', `**${player.getFullName()}** ha sido arrestado por **${tiempo} minutos**.`)] });
   }
+
+  // ── ANTIRAID ──────────────────────────────────────────────────────────
+  if (sub === 'antiraid') {
+    const estado = interaction.options.getString('estado');
+    gc.security = gc.security || {};
+    gc.security.activo = estado === 'on';
+    gc.markModified('security');
+    await gc.save();
+    return interaction.reply({ embeds: [E.ok(`${estado === 'on' ? '🟡' : '🔴'} Anti-Raid`, `Sistema anti-raid **${estado === 'on' ? 'activado' : 'desactivado'}**.`)] });
+  }
 }
 
 module.exports = { data, execute };
+
+// ─── Prefix ───────────────────────────────────────────────────────────────────
+const prefixCommands = [
+  {
+    name: 'antiraid',
+    aliases: ['security', 'seguridad'],
+    description: '!antiraid [on/off] — Activar o desactivar el sistema anti-raid',
+    async run(message, args) {
+      if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return message.reply('❌ Solo administradores.');
+      }
+      const gc = await GuildConfig.findOne({ guildId: message.guildId });
+      if (!gc) return message.reply('❌ Config no encontrada.');
+      if (!args.length) {
+        const estado = gc.security?.activo !== false ? '🟢 ACTIVO' : '🔴 DESACTIVADO';
+        return message.reply(`🛡️ **Anti-Raid:** ${estado}\nUsa \`!antiraid on\` o \`!antiraid off\``);
+      }
+      const accion = args[0].toLowerCase();
+      if (accion === 'on' || accion === 'true' || accion === '1') {
+        gc.security = gc.security || {};
+        gc.security.activo = true;
+        gc.markModified('security');
+        await gc.save();
+        return message.reply('🛡️ **Anti-Raid activado.**');
+      }
+      if (accion === 'off' || accion === 'false' || accion === '0') {
+        gc.security = gc.security || {};
+        gc.security.activo = false;
+        gc.markModified('security');
+        await gc.save();
+        return message.reply('🛡️ **Anti-Raid desactivado.**');
+      }
+      message.reply('Uso: `!antiraid on` o `!antiraid off`');
+    },
+  },
+];
+
+module.exports.prefixCommands = prefixCommands;
