@@ -292,66 +292,90 @@ async function ejecutarMinijuego(interaction, player, robo, inv) {
     return;
   }
 
-  // Fase 2 — Minijuego de ejecución
+  // Fase 2 — Minijuego de memoria (Simon Says)
+  const colores = ['🔴', '🟡', '🟢', '🔵'];
+  const nombreColor = { '🔴': 'Rojo', '🟡': 'Amarillo', '🟢': 'Verde', '🔵': 'Azul' };
+
   for (let fase = 1; fase <= fases; fase++) {
-    const pasoEmbed = new EmbedBuilder()
-      .setColor(0xff4444)
-      .setTitle(`🔫 ATRACO EN CURSO — Fase ${fase}/${fases}`)
+    // Generar secuencia aleatoria (3 + fase)
+    const seqLen = 2 + fase;
+    const secuencia = [];
+    for (let i = 0; i < seqLen; i++) secuencia.push(colores[Math.floor(Math.random() * colores.length)]);
+
+    // Mostrar secuencia al jugador (un color cada 1s)
+    for (let i = 0; i < seqLen; i++) {
+      const showEmbed = new EmbedBuilder()
+        .setColor(0x222244)
+        .setTitle(`🔫 ATRACO — Fase ${fase}/${fases}`)
+        .setDescription(
+          `**Memoriza la secuencia de colores:**\n\n` +
+          `#${i + 1}: **${nombreColor[secuencia[i]]}** ${secuencia[i]}\n\n` +
+          `🔵🟢🟡🔴 *Prepárate para repetirla...*`
+        )
+        .setFooter({ text: `Secuencia: ${i + 1}/${seqLen}` })
+        .setTimestamp();
+      const showMsg = fase === 1 && i === 0
+        ? await confirmacion.update({ embeds: [showEmbed], components: [], fetchReply: true })
+        : await interaction.editReply({ embeds: [showEmbed], components: [] });
+      await new Promise(r => setTimeout(r, 1200));
+    }
+
+    // Pedir al jugador que repita la secuencia
+    const inputEmbed = new EmbedBuilder()
+      .setColor(0xef4444)
+      .setTitle(`🔫 REPITE LA SECUENCIA — Fase ${fase}/${fases}`)
       .setDescription(
-        fase === 1
-          ? `⚡ **Entra y amenaza al personal.**\nHaz clic en el botón correcto en los próximos **15 segundos**.`
-          : fase === 2
-          ? `💰 **Recoge el botín.**\nSigue con la secuencia correcta.`
-          : `🚗 **¡Huye! La policía está en camino.**\nÚltima oportunidad.`,
+        `Haz clic en los **${seqLen} colores** en el orden correcto.\n\n` +
+        `*Tienes 5s por cada color.*`
       )
-      .setFooter({ text: `Fase ${fase} de ${fases} — 15 segundos` })
+      .setFooter({ text: `Haz clic en el color #1` })
       .setTimestamp();
 
-    // Generar 4 botones con uno correcto
-    const botones = ['🔴', '🟡', '🟢', '🔵'].sort(() => Math.random() - 0.5);
-    const correcto = botones[rand(0, 3)];
-    const rowFase = new ActionRowBuilder().addComponents(
-      botones.map(b =>
-        new ButtonBuilder()
-          .setCustomId(`rob_fase_${b}`)
-          .setLabel(b)
-          .setStyle(ButtonStyle.Primary),
-      ),
+    const row = new ActionRowBuilder().addComponents(
+      colores.map(c => new ButtonBuilder().setCustomId(`simon_${c}`).setLabel(c).setStyle(ButtonStyle.Primary)),
     );
 
-    let faseMsg;
-    if (fase === 1) {
-      faseMsg = await confirmacion.update({ embeds: [pasoEmbed], components: [rowFase], fetchReply: true });
-    } else {
-      faseMsg = await interaction.editReply({ embeds: [pasoEmbed], components: [rowFase] });
+    let inputMsg = await interaction.editReply({ embeds: [inputEmbed], components: [row] });
+
+    let aciertos = 0;
+    let fallo = false;
+
+    for (let paso = 0; paso < seqLen; paso++) {
+      try {
+        const click = await inputMsg.awaitMessageComponent({
+          filter: i => i.user.id === interaction.user.id && i.customId.startsWith('simon_'),
+          time: 6000,
+        });
+        const elegido = click.customId.replace('simon_', '');
+        await click.deferUpdate();
+
+        if (elegido !== secuencia[paso]) {
+          fallo = true;
+          break;
+        }
+        aciertos++;
+
+        if (paso < seqLen - 1) {
+          await inputMsg.edit({
+            embeds: [new EmbedBuilder().setColor(0x22c55e).setDescription(`✅ Correcto. Ahora el color #${paso + 2}`).setFooter({ text: `Paso ${paso + 2}/${seqLen}` }).setTimestamp()],
+            components: [row],
+          });
+        }
+      } catch {
+        fallo = true;
+        break;
+      }
     }
 
-    let respuesta;
-    try {
-      respuesta = await faseMsg.awaitMessageComponent({
-        filter: i => i.user.id === interaction.user.id && i.customId.startsWith('rob_fase_'),
-        time: 15_000,
-        componentType: ComponentType.Button,
-      });
-    } catch {
-      // Tiempo agotado = fallo
-      await interaction.editReply({ embeds: [falloEmbed(robo, player, 'tiempo')], components: [] });
-      await aplicarFallo(player, robo);
-      return;
-    }
-
-    const elegido = respuesta.customId.replace('rob_fase_', '');
-    if (elegido !== correcto) {
-      await respuesta.update({ embeds: [falloEmbed(robo, player, 'botón')], components: [] });
+    if (fallo) {
+      await interaction.editReply({ embeds: [falloEmbed(robo, player, 'botón')], components: [] });
       await aplicarFallo(player, robo);
       return;
     }
 
     if (fase < fases) {
-      await respuesta.update({ embeds: [new EmbedBuilder().setColor(0x00ff88).setTitle(`✅ Fase ${fase} superada — Continúa...`).setTimestamp()], components: [] });
+      await inputMsg.edit({ embeds: [new EmbedBuilder().setColor(0x00ff88).setTitle(`✅ Fase ${fase} superada`).setDescription(`¡Secuencia correcta! Prepárate para la siguiente fase.`).setTimestamp()], components: [] });
       await new Promise(r => setTimeout(r, 2000));
-    } else {
-      await respuesta.deferUpdate();
     }
   }
 
@@ -788,82 +812,13 @@ const CASAS = {
 async function ejecutarAllanamiento(interaction, player, zona) {
   const casa = CASAS[zona];
   const fases = casa.habitaciones;
+  const colores = ['🔴', '🟡', '🟢', '🔵'];
+  const nombreColor = { '🔴': 'Rojo', '🟡': 'Amarillo', '🟢': 'Verde', '🔵': 'Azul' };
 
-  const empezar = async (habitacion) => {
-    // Encontrar objetos en la habitación (minijuego de buscar)
-    const objetos = ['💎 Joyas', '💵 Efectivo', '📱 Electrónicos', '🔫 Arma', '💊 Medicamentos', '🍷 Alcohol'];
-    const encontrados = Math.floor(Math.random() * 3) + 1;
-    const encontrado = objetos.sort(() => Math.random() - 0.5).slice(0, encontrados);
-
-    const embed = new EmbedBuilder()
-      .setColor(0x1a1a2e)
-      .setTitle(`🏠 Allanamiento — ${casa.nombre}`)
-      .setDescription(
-        `**Habitación ${habitacion}/${fases}** — Estás registrando la casa.\n\n` +
-        `Has encontrado: ${encontrado.join(', ')}\n\n` +
-        `🔧 **Desactiva la alarma** seleccionando el cable correcto.`
-      )
-      .setFooter({ text: `Habitación ${habitacion}/${fases} · 15s` })
-      .setTimestamp();
-
-    const cables = ['🔴', '🟡', '🟢', '🔵', '🟣'].sort(() => Math.random() - 0.5);
-    const correcto = cables[Math.floor(Math.random() * cables.length)];
-    const row = new ActionRowBuilder().addComponents(
-      cables.map(c => new ButtonBuilder().setCustomId(`hab_${c}`).setLabel(c).setStyle(ButtonStyle.Primary)),
-    );
-
-    const msg = habitacion === 1
-      ? await interaction.editReply({ embeds: [embed], components: [row] })
-      : await interaction.editReply({ embeds: [embed], components: [row] });
-
-    try {
-      const click = await msg.awaitMessageComponent({ filter: i => i.user.id === interaction.user.id, time: 15000 });
-      const elegido = click.customId.replace('hab_', '');
-      await click.deferUpdate();
-
-      if (elegido !== correcto) {
-        await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xef4444).setTitle('❌ ¡Alarma!').setDescription('La policía ha sido alertada. Tienes que huir.').setTimestamp()], components: [] });
-        player.arrestos++; await player.save();
-        return;
-      }
-
-      if (habitacion < fases) {
-        await msg.edit({ embeds: [new EmbedBuilder().setColor(0x22c55e).setDescription(`✅ Habitación ${habitacion} registrada. Pasa a la siguiente.`).setTimestamp()], components: [] });
-        await new Promise(r => setTimeout(r, 1500));
-        return empezar(habitacion + 1);
-      }
-
-      // Todas las habitaciones → Éxito
-      const botín = Math.floor(Math.random() * (casa.max - casa.min + 1)) + casa.min;
-      player.dineroSucio += botín;
-      player.robosRealizados++;
-      player.addXP(rand(20, 60));
-      await player.save();
-
-      await interaction.editReply({
-        embeds: [new EmbedBuilder().setColor(0x00ff88).setTitle(`✅ Allanamiento exitoso — ${casa.nombre}`)
-          .setDescription(`Registraste las **${fases} habitaciones** y escapaste con **$${botín.toLocaleString()}** en dinero sucio.`).setTimestamp()],
-        components: [],
-      });
-
-      // Alerta policial
-      try {
-        const gc = await GuildConfig.findOne({ guildId: interaction.guildId });
-        const chId = gc?.canales?.policia || gc?.canales?.emergencias;
-        if (chId) {
-          const ch = await interaction.guild.channels.fetch(chId).catch(() => null);
-          if (ch) await ch.send({ content: '🚨 @here', embeds: [new EmbedBuilder().setColor(0xf59e0b).setTitle('🔔 Casa allanada').setDescription(`**Zona:** ${casa.nombre}\n**Sospechoso:** ${interaction.user.tag}\n**Botín:** ~$${botín.toLocaleString()}`).setTimestamp()] }).catch(() => {});
-        }
-      } catch {}
-    } catch {
-      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xef4444).setTitle('⏰ Tiempo agotado').setDescription('El dueño llegó y te pilló. La policía viene en camino.').setTimestamp()], components: [] });
-      player.arrestos++; await player.save();
-    }
-  };
-
+  // ─── Confirmación ───────────────────────────────────────────────────────
   const startEmbed = new EmbedBuilder()
     .setColor(0x1a1a2e).setTitle(`🏠 Allanar — ${casa.nombre}`)
-    .setDescription(`**Habitaciones:** ${fases}\n**Botín estimado:** $${casa.min.toLocaleString()} — $${casa.max.toLocaleString()}\n\n_Tendrás que desactivar alarmas en cada habitación._`)
+    .setDescription(`**Habitaciones:** ${fases}\n**Botín estimado:** $${casa.min.toLocaleString()} — $${casa.max.toLocaleString()}\n\n_Tendrás que memorizar secuencias de colores para desactivar alarmas._`)
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
@@ -876,10 +831,91 @@ async function ejecutarAllanamiento(interaction, player, zona) {
     const conf = await msg.awaitMessageComponent({ filter: i => i.user.id === interaction.user.id, time: 30000 });
     if (conf.customId === 'al_cancelar') return conf.update({ embeds: [E.info('Cancelado', 'Allanamiento cancelado.')], components: [] });
     await conf.deferUpdate();
-    await empezar(1);
-  } catch {
-    msg.edit({ embeds: [E.err('Tiempo', 'No confirmaste a tiempo.')], components: [] });
+  } catch { return msg.edit({ embeds: [E.err('Tiempo', 'No confirmaste a tiempo.')], components: [] }); }
+
+  // ─── Por cada habitación ────────────────────────────────────────────────
+  for (let hab = 1; hab <= fases; hab++) {
+    const objetos = ['💎 Joyas', '💵 Efectivo', '📱 Electrónicos', '🔫 Arma', '💊 Medicamentos', '🍷 Alcohol'];
+    const encontrados = Math.floor(Math.random() * 3) + 1;
+    const encontrado = objetos.sort(() => Math.random() - 0.5).slice(0, encontrados);
+
+    const seqLen = 2 + Math.floor(hab / 2);
+    const secuencia = [];
+    for (let i = 0; i < seqLen; i++) secuencia.push(colores[Math.floor(Math.random() * colores.length)]);
+
+    // Mostrar secuencia
+    for (let i = 0; i < seqLen; i++) {
+      const showEmbed = new EmbedBuilder()
+        .setColor(0x222244)
+        .setTitle(`🏠 Allanamiento — Habitación ${hab}/${fases}`)
+        .setDescription(
+          `**Encontraste:** ${encontrado.join(', ')}\n\n` +
+          `🔢 **Memoriza esta combinación:**\n\n` +
+          `**#${i + 1}:** ${nombreColor[secuencia[i]]} ${secuencia[i]}`
+        )
+        .setFooter({ text: `Secuencia: ${i + 1}/${seqLen}` }).setTimestamp();
+      await interaction.editReply({ embeds: [showEmbed], components: [] });
+      await new Promise(r => setTimeout(r, 1200));
+    }
+
+    // Pedir repetir
+    const inputEmbed = new EmbedBuilder()
+      .setColor(0xef4444)
+      .setTitle(`🏠 Repite la combinación — Habitación ${hab}/${fases}`)
+      .setDescription(`Haz clic en los **${seqLen} colores** en el orden correcto.\n\n*6 segundos por color.*`)
+      .setFooter({ text: `Color #1` }).setTimestamp();
+
+    const btnRow = new ActionRowBuilder().addComponents(
+      colores.map(c => new ButtonBuilder().setCustomId(`simon_${c}`).setLabel(c).setStyle(ButtonStyle.Primary)),
+    );
+
+    let inputMsg = await interaction.editReply({ embeds: [inputEmbed], components: [btnRow] });
+    let aciertos = 0;
+    let fallo = false;
+
+    for (let paso = 0; paso < seqLen; paso++) {
+      try {
+        const click = await inputMsg.awaitMessageComponent({ filter: i => i.user.id === interaction.user.id && i.customId.startsWith('simon_'), time: 6000 });
+        const elegido = click.customId.replace('simon_', '');
+        await click.deferUpdate();
+        if (elegido !== secuencia[paso]) { fallo = true; break; }
+        aciertos++;
+        if (paso < seqLen - 1) {
+          await inputMsg.edit({ embeds: [new EmbedBuilder().setColor(0x22c55e).setDescription(`✅ Correcto. Color #${paso + 2}`).setFooter({ text: `Paso ${paso + 2}/${seqLen}` }).setTimestamp()], components: [btnRow] });
+        }
+      } catch { fallo = true; break; }
+    }
+
+    if (fallo) {
+      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xef4444).setTitle('❌ ¡Alarma!').setDescription('La policía ha sido alertada. El dueño llegó.').setTimestamp()], components: [] });
+      player.arrestos++; await player.save();
+      return;
+    }
+
+    if (hab < fases) {
+      await inputMsg.edit({ embeds: [new EmbedBuilder().setColor(0x22c55e).setDescription(`✅ Habitación ${hab} asegurada. Pasa a la siguiente.`).setTimestamp()], components: [] });
+      await new Promise(r => setTimeout(r, 1500));
+    }
   }
+
+  // ─── Éxito ──────────────────────────────────────────────────────────────
+  const botín = Math.floor(Math.random() * (casa.max - casa.min + 1)) + casa.min;
+  player.dineroSucio += botín; player.robosRealizados++; player.addXP(rand(20, 60)); await player.save();
+
+  await interaction.editReply({
+    embeds: [new EmbedBuilder().setColor(0x00ff88).setTitle(`✅ Allanamiento exitoso — ${casa.nombre}`)
+      .setDescription(`Registraste las **${fases} habitaciones** y escapaste con **$${botín.toLocaleString()}** en dinero sucio.`).setTimestamp()],
+    components: [],
+  });
+
+  try {
+    const gc = await GuildConfig.findOne({ guildId: interaction.guildId });
+    const chId = gc?.canales?.policia || gc?.canales?.emergencias;
+    if (chId) {
+      const ch = await interaction.guild.channels.fetch(chId).catch(() => null);
+      if (ch) await ch.send({ content: '🚨 @here', embeds: [new EmbedBuilder().setColor(0xf59e0b).setTitle('🔔 Casa allanada').setDescription(`**Zona:** ${casa.nombre}\n**Sospechoso:** ${interaction.user.tag}\n**Botín:** ~$${botín.toLocaleString()}`).setTimestamp()] }).catch(() => {});
+    }
+  } catch {}
 }
 
 // ─── Prefix commands ──────────────────────────────────────────────────────────
@@ -943,22 +979,29 @@ const prefixCommands = [
       if (!player.personajeCreado) return message.reply('❌ Sin personaje.');
       if (player.muerto || player.enHospital || player.enCarcel) return message.reply('❌ No puedes allanar ahora.');
       const cd = player.getCooldown('allanar');
-      if (cd && Date.now() - cd.getTime() < 3600000) { const r = 3600000 - (Date.now() - cd.getTime()); return message.reply(`⏳ ${Math.floor(r/60000)}m`); }
-      player.setCooldown('allanar', new Date()); await player.save();
-      const fases = CASAS[args[0]].habitaciones;
-      let fase = 1;
-      const cables = ['🔴','🟡','🟢','🔵','🟣'];
-      const correcto = cables[Math.floor(Math.random()*cables.length)];
-      const row = new (require('discord.js').ActionRowBuilder)().addComponents(cables.map(c => new (require('discord.js').ButtonBuilder)().setCustomId(`hab_${c}`).setLabel(c).setStyle(ButtonStyle.Primary)));
-      const embed = new EmbedBuilder().setColor(0x1a1a2e).setTitle(`🏠 Allanamiento — ${CASAS[args[0]].nombre}`).setDescription(`**Habitación ${fase}/${fases}** — Elige el cable correcto.\n*15 segundos*`).setTimestamp();
-      const sent = await message.channel.send({ embeds: [embed], components: [row] });
-      try {
-        const click = await sent.awaitMessageComponent({ filter: i => i.user.id === message.author.id, time: 15000 });
-        if (click.customId.replace('hab_','') !== correcto) { player.arrestos++; await player.save(); return sent.edit({ embeds: [new EmbedBuilder().setColor(0xef4444).setTitle('❌ Alarma!').setDescription('Policía alertada.')], components: [] }); }
-        const botín = Math.floor(Math.random()*(CASAS[args[0]].max-CASAS[args[0]].min+1))+CASAS[args[0]].min;
-        player.dineroSucio+=botín; player.robosRealizados++; await player.save();
-        sent.edit({ embeds: [new EmbedBuilder().setColor(0x00ff88).setTitle('✅ Casa allanada').setDescription(`Te llevaste **$${botín.toLocaleString()}** en dinero sucio.`)], components: [] });
-      } catch { sent.edit({ embeds: [new EmbedBuilder().setColor(0xef4444).setTitle('⏰ Tiempo').setDescription('Te pillaron.').setTimestamp()], components: [] }); player.arrestos++; await player.save(); }
+      if (cd && Date.now()-cd.getTime()<3600000) { const r=3600000-(Date.now()-cd.getTime()); return message.reply(`⏳ ${Math.floor(r/60000)}m`); }
+      player.setCooldown('allanar',new Date()); await player.save();
+      const casa = CASAS[args[0]]; const fases = casa.habitaciones;
+      const colores = ['🔴','🟡','🟢','🔵'];
+      const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+      for (let hab=1; hab<=fases; hab++) {
+        const seqLen = 2+Math.floor(hab/2);
+        const seq = []; for(let i=0;i<seqLen;i++) seq.push(colores[Math.floor(Math.random()*colores.length)]);
+        for(let i=0;i<seqLen;i++) {
+          await message.channel.send({ embeds:[new EmbedBuilder().setColor(0x222244).setTitle(`🏠 Habitación ${hab}/${fases}`).setDescription(`**#${i+1}:** ${seq[i]}`).setTimestamp()] });
+          await new Promise(r=>setTimeout(r,1200));
+        }
+        const btnRow = new ActionRowBuilder().addComponents(colores.map(c=>new ButtonBuilder().setCustomId(`simon_${c}`).setLabel(c).setStyle(ButtonStyle.Primary)));
+        const sent = await message.channel.send({ embeds:[new EmbedBuilder().setColor(0xef4444).setTitle(`🏠 Repite: Habitación ${hab}/${fases}`).setDescription(`Colores en orden. 6s cada uno.`).setTimestamp()], components:[btnRow] });
+        let fallo = false;
+        for(let paso=0;paso<seqLen;paso++) {
+          try { const click=await sent.awaitMessageComponent({filter:i=>i.user.id===message.author.id&&i.customId.startsWith('simon_'),time:6000}); const e=click.customId.replace('simon_',''); await click.deferUpdate(); if(e!==seq[paso]){fallo=true;break;} } catch{fallo=true;break;}
+        }
+        if(fallo){ player.arrestos++;await player.save(); return sent.edit({embeds:[new EmbedBuilder().setColor(0xef4444).setTitle('❌ Alarma!').setDescription('Te pillaron.')],components:[]}); }
+        if(hab<fases) await sent.edit({embeds:[new EmbedBuilder().setColor(0x22c55e).setDescription(`✅ Hab ${hab} lista.`).setTimestamp()],components:[]});
+      }
+      const botín=Math.floor(Math.random()*(casa.max-casa.min+1))+casa.min; player.dineroSucio+=botín;player.robosRealizados++;await player.save();
+      message.reply(`✅ **${casa.nombre}** allanada. Botín: **$${botín.toLocaleString()}** (dinero sucio).`);
     },
   },
 ];
