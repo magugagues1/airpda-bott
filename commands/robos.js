@@ -634,13 +634,23 @@ const data = [
 
   new SlashCommandBuilder()
     .setName('secuestrar')
-    .setDescription('Secuestrar a un usuario (apuntarle a la cabeza)')
+    .setDescription('Secuestrar a un usuario')
     .addUserOption(o => o.setName('victima').setDescription('Usuario a secuestrar').setRequired(true))
-    .addStringOption(o => o.setName('metodo').setDescription('Método de secuestro').setRequired(false)
+    .addStringOption(o => o.setName('metodo').setDescription('Método').setRequired(false)
       .addChoices(
-        { name: '🎯 Por la espalda apuntando a la cabeza', value: 'espalda' },
+        { name: '🎯 Por la espalda', value: 'espalda' },
         { name: '🚗 Metido en un coche', value: 'coche' },
         { name: '👊 Inconsciente', value: 'inconsciente' },
+      )),
+
+  new SlashCommandBuilder()
+    .setName('allanar')
+    .setDescription('🏠 Allanar una casa para robar')
+    .addStringOption(o => o.setName('zona').setDescription('Zona de la casa').setRequired(true)
+      .addChoices(
+        { name: '🏘️ Casa en Vinewood (Alta)', value: 'alta' },
+        { name: '🏡 Casa en el centro (Media)', value: 'media' },
+        { name: '🏚️ Casa en LS Este (Baja)', value: 'baja' },
       )),
 ];
 
@@ -747,6 +757,129 @@ async function execute(interaction, client) {
 
   const inv = await getInventory(interaction.user.id);
   await ejecutarMinijuego(interaction, player, robo, inv);
+
+  // ─── ALLANAR ────────────────────────────────────────────────────────────────
+  if (cmd === 'allanar') {
+    const zona = interaction.options.getString('zona');
+    const casa = CASAS[zona];
+    if (!casa) return interaction.reply({ embeds: [E.err('Error', 'Zona inválida.')], ephemeral: true });
+    await interaction.deferReply();
+    const p = await getPlayer(interaction.user.id, interaction.user.username);
+    if (!p.personajeCreado) return interaction.editReply({ embeds: [E.err('Sin personaje', 'Necesitas un personaje.')] });
+    if (p.muerto || p.enHospital || p.enCarcel) return interaction.editReply({ embeds: [E.err('No disponible', 'No puedes allanar en tu estado actual.')] });
+    const cd = p.getCooldown('allanar');
+    if (cd && Date.now() - cd.getTime() < 3600000) {
+      const r = 3600000 - (Date.now() - cd.getTime());
+      return interaction.editReply({ embeds: [E.warn('Cooldown', `Espera **${Math.floor(r/60000)}m** para allanar otra casa.`)] });
+    }
+    p.setCooldown('allanar', new Date());
+    await p.save();
+    return ejecutarAllanamiento(interaction, p, zona);
+  }
+}
+
+// ─── ALLANAR (Robo de casas) ──────────────────────────────────────────────────
+const CASAS = {
+  alta: { nombre: 'Villa en Vinewood', min: 5000, max: 15000, habitaciones: 5, imagen: 'https://i.imgur.com/8pYxqQ4.png' },
+  media: { nombre: 'Casa en el Centro', min: 2000, max: 6000, habitaciones: 3, imagen: 'https://i.imgur.com/5jYCgNs.png' },
+  baja: { nombre: 'Casa en LS Este', min: 500, max: 2000, habitaciones: 2, imagen: 'https://i.imgur.com/0QeFx37.png' },
+};
+
+async function ejecutarAllanamiento(interaction, player, zona) {
+  const casa = CASAS[zona];
+  const fases = casa.habitaciones;
+
+  const empezar = async (habitacion) => {
+    // Encontrar objetos en la habitación (minijuego de buscar)
+    const objetos = ['💎 Joyas', '💵 Efectivo', '📱 Electrónicos', '🔫 Arma', '💊 Medicamentos', '🍷 Alcohol'];
+    const encontrados = Math.floor(Math.random() * 3) + 1;
+    const encontrado = objetos.sort(() => Math.random() - 0.5).slice(0, encontrados);
+
+    const embed = new EmbedBuilder()
+      .setColor(0x1a1a2e)
+      .setTitle(`🏠 Allanamiento — ${casa.nombre}`)
+      .setDescription(
+        `**Habitación ${habitacion}/${fases}** — Estás registrando la casa.\n\n` +
+        `Has encontrado: ${encontrado.join(', ')}\n\n` +
+        `🔧 **Desactiva la alarma** seleccionando el cable correcto.`
+      )
+      .setFooter({ text: `Habitación ${habitacion}/${fases} · 15s` })
+      .setTimestamp();
+
+    const cables = ['🔴', '🟡', '🟢', '🔵', '🟣'].sort(() => Math.random() - 0.5);
+    const correcto = cables[Math.floor(Math.random() * cables.length)];
+    const row = new ActionRowBuilder().addComponents(
+      cables.map(c => new ButtonBuilder().setCustomId(`hab_${c}`).setLabel(c).setStyle(ButtonStyle.Primary)),
+    );
+
+    const msg = habitacion === 1
+      ? await interaction.editReply({ embeds: [embed], components: [row] })
+      : await interaction.editReply({ embeds: [embed], components: [row] });
+
+    try {
+      const click = await msg.awaitMessageComponent({ filter: i => i.user.id === interaction.user.id, time: 15000 });
+      const elegido = click.customId.replace('hab_', '');
+      await click.deferUpdate();
+
+      if (elegido !== correcto) {
+        await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xef4444).setTitle('❌ ¡Alarma!').setDescription('La policía ha sido alertada. Tienes que huir.').setTimestamp()], components: [] });
+        player.arrestos++; await player.save();
+        return;
+      }
+
+      if (habitacion < fases) {
+        await msg.edit({ embeds: [new EmbedBuilder().setColor(0x22c55e).setDescription(`✅ Habitación ${habitacion} registrada. Pasa a la siguiente.`).setTimestamp()], components: [] });
+        await new Promise(r => setTimeout(r, 1500));
+        return empezar(habitacion + 1);
+      }
+
+      // Todas las habitaciones → Éxito
+      const botín = Math.floor(Math.random() * (casa.max - casa.min + 1)) + casa.min;
+      player.dineroSucio += botín;
+      player.robosRealizados++;
+      player.addXP(rand(20, 60));
+      await player.save();
+
+      await interaction.editReply({
+        embeds: [new EmbedBuilder().setColor(0x00ff88).setTitle(`✅ Allanamiento exitoso — ${casa.nombre}`)
+          .setDescription(`Registraste las **${fases} habitaciones** y escapaste con **$${botín.toLocaleString()}** en dinero sucio.`).setTimestamp()],
+        components: [],
+      });
+
+      // Alerta policial
+      try {
+        const gc = await GuildConfig.findOne({ guildId: interaction.guildId });
+        const chId = gc?.canales?.policia || gc?.canales?.emergencias;
+        if (chId) {
+          const ch = await interaction.guild.channels.fetch(chId).catch(() => null);
+          if (ch) await ch.send({ content: '🚨 @here', embeds: [new EmbedBuilder().setColor(0xf59e0b).setTitle('🔔 Casa allanada').setDescription(`**Zona:** ${casa.nombre}\n**Sospechoso:** ${interaction.user.tag}\n**Botín:** ~$${botín.toLocaleString()}`).setTimestamp()] }).catch(() => {});
+        }
+      } catch {}
+    } catch {
+      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xef4444).setTitle('⏰ Tiempo agotado').setDescription('El dueño llegó y te pilló. La policía viene en camino.').setTimestamp()], components: [] });
+      player.arrestos++; await player.save();
+    }
+  };
+
+  const startEmbed = new EmbedBuilder()
+    .setColor(0x1a1a2e).setTitle(`🏠 Allanar — ${casa.nombre}`)
+    .setDescription(`**Habitaciones:** ${fases}\n**Botín estimado:** $${casa.min.toLocaleString()} — $${casa.max.toLocaleString()}\n\n_Tendrás que desactivar alarmas en cada habitación._`)
+    .setTimestamp();
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('al_iniciar').setLabel('🔫 Iniciar').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('al_cancelar').setLabel('❌ Cancelar').setStyle(ButtonStyle.Secondary),
+  );
+
+  const msg = await interaction.editReply({ embeds: [startEmbed], components: [row] });
+  try {
+    const conf = await msg.awaitMessageComponent({ filter: i => i.user.id === interaction.user.id, time: 30000 });
+    if (conf.customId === 'al_cancelar') return conf.update({ embeds: [E.info('Cancelado', 'Allanamiento cancelado.')], components: [] });
+    await conf.deferUpdate();
+    await empezar(1);
+  } catch {
+    msg.edit({ embeds: [E.err('Tiempo', 'No confirmaste a tiempo.')], components: [] });
+  }
 }
 
 // ─── Prefix commands ──────────────────────────────────────────────────────────
@@ -798,6 +931,34 @@ const prefixCommands = [
         )
         .setTimestamp();
       return message.reply({ embeds: [embed] });
+    },
+  },
+  {
+    name: 'allanar',
+    aliases: ['casa', 'robo_casa'],
+    description: '!allanar [alta/media/baja] — Allanar una casa para robar',
+    async run(message, args) {
+      if (!args[0] || !CASAS[args[0]]) return message.reply('Zonas: `alta` (Vinewood), `media` (Centro), `baja` (LS Este). Ej: `!allanar alta`');
+      const player = await getPlayer(message.author.id, message.author.username);
+      if (!player.personajeCreado) return message.reply('❌ Sin personaje.');
+      if (player.muerto || player.enHospital || player.enCarcel) return message.reply('❌ No puedes allanar ahora.');
+      const cd = player.getCooldown('allanar');
+      if (cd && Date.now() - cd.getTime() < 3600000) { const r = 3600000 - (Date.now() - cd.getTime()); return message.reply(`⏳ ${Math.floor(r/60000)}m`); }
+      player.setCooldown('allanar', new Date()); await player.save();
+      const fases = CASAS[args[0]].habitaciones;
+      let fase = 1;
+      const cables = ['🔴','🟡','🟢','🔵','🟣'];
+      const correcto = cables[Math.floor(Math.random()*cables.length)];
+      const row = new (require('discord.js').ActionRowBuilder)().addComponents(cables.map(c => new (require('discord.js').ButtonBuilder)().setCustomId(`hab_${c}`).setLabel(c).setStyle(ButtonStyle.Primary)));
+      const embed = new EmbedBuilder().setColor(0x1a1a2e).setTitle(`🏠 Allanamiento — ${CASAS[args[0]].nombre}`).setDescription(`**Habitación ${fase}/${fases}** — Elige el cable correcto.\n*15 segundos*`).setTimestamp();
+      const sent = await message.channel.send({ embeds: [embed], components: [row] });
+      try {
+        const click = await sent.awaitMessageComponent({ filter: i => i.user.id === message.author.id, time: 15000 });
+        if (click.customId.replace('hab_','') !== correcto) { player.arrestos++; await player.save(); return sent.edit({ embeds: [new EmbedBuilder().setColor(0xef4444).setTitle('❌ Alarma!').setDescription('Policía alertada.')], components: [] }); }
+        const botín = Math.floor(Math.random()*(CASAS[args[0]].max-CASAS[args[0]].min+1))+CASAS[args[0]].min;
+        player.dineroSucio+=botín; player.robosRealizados++; await player.save();
+        sent.edit({ embeds: [new EmbedBuilder().setColor(0x00ff88).setTitle('✅ Casa allanada').setDescription(`Te llevaste **$${botín.toLocaleString()}** en dinero sucio.`)], components: [] });
+      } catch { sent.edit({ embeds: [new EmbedBuilder().setColor(0xef4444).setTitle('⏰ Tiempo').setDescription('Te pillaron.').setTimestamp()], components: [] }); player.arrestos++; await player.save(); }
     },
   },
 ];
