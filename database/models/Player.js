@@ -36,6 +36,8 @@ const playerSchema = new mongoose.Schema({
   pinBancoAhorros: { type: String, default: null }, // PIN cuenta de ahorros
   dineroSucio: { type: Number, default: 0 },
   totalGanado: { type: Number, default: 0 },
+  fichas: { type: Number, default: 0 },
+  rachaCasino: { type: Number, default: 0 },
 
   // Estadísticas vitales
   salud: { type: Number, default: 100, min: 0, max: 100 },
