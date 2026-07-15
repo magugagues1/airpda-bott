@@ -442,18 +442,42 @@ async function execute(interaction, client) {
     }
 
     const efecto = invItem.efecto || {};
-    const tiposUsables = ['comida', 'bebida', 'medkit', 'medicina'];
+    const cambios = [];
 
-    if (!tiposUsables.includes(invItem.tipo)) {
-      return interaction.reply({
-        embeds: [E.warn('No usable', `**${invItem.nombre}** no es un item consumible.\nLos equipables se gestionan con \`/equipar\`.`)],
-        ephemeral: true,
-      });
+    if (invItem.efecto?.salud || invItem.efecto?.hambre || invItem.efecto?.sed) {
+      if (invItem.efecto?.salud)  { player.salud  = Math.min(100, player.salud  + invItem.efecto.salud);  cambios.push(`+${invItem.efecto.salud} salud`); }
+      if (invItem.efecto?.hambre) { player.hambre = Math.min(100, player.hambre + invItem.efecto.hambre); cambios.push(`+${invItem.efecto.hambre} hambre`); }
+      if (invItem.efecto?.sed)    { player.sed    = Math.min(100, player.sed    + invItem.efecto.sed);    cambios.push(`+${invItem.efecto.sed} sed`); }
+      if (cambios.length) {
+        inv.removeItem(invItem.id, 1);
+        await inv.save(); await player.save();
+        return interaction.reply({
+          embeds: [new EmbedBuilder().setColor(config.colors.success).setTitle(`${invItem.emoji} ${invItem.nombre} usado`).setDescription(cambios.join(', ')).setTimestamp()],
+        });
+      }
     }
 
-    // Aplicar efectos
-    const cambios = [];
-    const antes = { salud: player.salud, hambre: player.hambre, sed: player.sed };
+    // Equipar
+    if (invItem.equipable) {
+      const mismoTipo = inv.items.find(i => i.tipo === invItem.tipo && i.equipado && i.id !== invItem.id);
+      if (mismoTipo) mismoTipo.equipado = false;
+      invItem.equipado = true;
+      await inv.save();
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(config.colors.success).setTitle(`${invItem.emoji} Equipado`).setDescription(`**${invItem.nombre}** equipado.`).setTimestamp()] });
+    }
+
+    // Documentos
+    if (invItem.tipo === 'documento') {
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(config.colors.info).setTitle(`📄 ${invItem.nombre}`).setDescription(invItem.desc || 'Documento válido.').setTimestamp()] });
+    }
+
+    // Semillas
+    if (invItem.tipo === 'semilla' || invItem.id?.startsWith('semilla_')) {
+      const tipoDroga = invItem.cultivo || invItem.id?.replace('semilla_', '');
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(config.colors.info).setTitle('🌱 Semilla').setDescription(`**${invItem.nombre}**: Plántala con \`/drogas plantar tipo:${tipoDroga}\``).setTimestamp()] });
+    }
+
+    return interaction.reply({ embeds: [E.warn('No usable', `**${invItem.nombre}** no se puede usar de esta forma.`)], ephemeral: true });
 
     if (efecto.salud)   { player.salud  = Math.min(100, player.salud  + efecto.salud);  cambios.push(`❤️ Salud: +${efecto.salud}`);  }
     if (efecto.hambre)  { player.hambre = Math.min(100, player.hambre + efecto.hambre); cambios.push(`🍔 Hambre: +${efecto.hambre}`); }
@@ -649,7 +673,32 @@ const prefixCommands = [
       if (efecto.salud)  { player.salud  = Math.min(100, player.salud  + efecto.salud);  cambios.push(`+${efecto.salud} salud`); }
       if (efecto.hambre) { player.hambre = Math.min(100, player.hambre + efecto.hambre); cambios.push(`+${efecto.hambre} hambre`); }
       if (efecto.sed)    { player.sed    = Math.min(100, player.sed    + efecto.sed);    cambios.push(`+${efecto.sed} sed`); }
-      if (!cambios.length) return message.reply('❌ Este item no es consumible aquí.');
+      if (!cambios.length) {
+        // Equipar items equipables
+        if (invItem.equipable) {
+          // Desequipar item del mismo tipo si ya hay uno equipado
+          const mismoTipo = inv.items.find(i => i.tipo === invItem.tipo && i.equipado && i.id !== invItem.id);
+          if (mismoTipo) mismoTipo.equipado = false;
+          invItem.equipado = true;
+          await inv.save();
+          return message.reply(`${invItem.emoji} **${invItem.nombre}** equipado.`);
+        }
+        // Items de tipo documento
+        if (invItem.tipo === 'documento') {
+          return message.reply(`📄 **${invItem.nombre}** — ${invItem.desc || 'Documento válido.'}`);
+        }
+        // Items de tipo semilla
+        if (invItem.tipo === 'semilla' || invItem.id?.startsWith('semilla_')) {
+          const tipoDroga = invItem.cultivo || invItem.id?.replace('semilla_', '');
+          const DROGAS = require('../data/drogas');
+          if (tipoDroga && DROGAS[tipoDroga]) {
+            // Informar al usuario cómo plantar
+            return message.reply(`🌱 **${invItem.nombre}**: Plántala con \`/drogas plantar tipo:${tipoDroga}\` o \`!plantar ${tipoDroga}\``);
+          }
+          return message.reply(`🌱 **${invItem.nombre}**: Úsala con \`/drogas plantar\`.`);
+        }
+        return message.reply('❌ Este item no se puede usar directamente.');
+      }
 
       inv.removeItem(invItem.id, 1);
       await inv.save();
