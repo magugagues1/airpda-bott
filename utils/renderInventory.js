@@ -1,10 +1,7 @@
 const fs = require('fs');
-const path = require('path');
 const { AttachmentBuilder } = require('discord.js');
 const { getSlotCenter, SLOTS } = require('./inventoryGrid');
 const { getItemImage } = require('../config/itemImages');
-
-const IMAGES_DIR = path.join(__dirname, '..', 'images');
 
 async function renderInventoryImage(items) {
   try {
@@ -32,20 +29,7 @@ async function renderInventoryImage(items) {
       const center = getSlotCenter(i);
       if (!center) continue;
 
-      const imgFile = getItemImage(item);
-      let imgPath = null;
-
-      if (imgFile) imgPath = path.join(IMAGES_DIR, imgFile);
-      if (!imgPath || !fs.existsSync(imgPath)) {
-        // Fallback: buscar cualquier imagen que contenga parte del nombre
-        const files = fs.readdirSync(IMAGES_DIR);
-        const match = files.find(f => {
-          const name = item.nombre?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
-          const fLower = f.toLowerCase().replace(/[^a-z0-9]/g, '');
-          return fLower.includes(name) || name.includes(fLower.replace(/weapon/g, ''));
-        });
-        if (match) imgPath = path.join(IMAGES_DIR, match);
-      }
+      let imgPath = getItemImage(item);
 
       if (imgPath && fs.existsSync(imgPath)) {
         try {
