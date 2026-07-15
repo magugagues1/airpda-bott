@@ -444,7 +444,14 @@ async function execute(interaction, client) {
     const efecto = invItem.efecto || {};
     const cambios = [];
 
-    if (invItem.efecto?.salud || invItem.efecto?.hambre || invItem.efecto?.sed) {
+    // Fallback para items básicos sin efecto definido
+    if (!efecto.salud && !efecto.hambre && !efecto.sed) {
+      const nombreLower = invItem.nombre?.toLowerCase() || '';
+      if (nombreLower.includes('comida') || nombreLower.includes('hamburguesa') || invItem.id === 'comida') efecto.hambre = 30;
+      if (nombreLower.includes('agua') || nombreLower.includes('refresco') || invItem.id === 'agua') efecto.sed = 30;
+    }
+
+    if (efecto.salud || efecto.hambre || efecto.sed) {
       if (invItem.efecto?.salud)  { player.salud  = Math.min(100, player.salud  + invItem.efecto.salud);  cambios.push(`+${invItem.efecto.salud} salud`); }
       if (invItem.efecto?.hambre) { player.hambre = Math.min(100, player.hambre + invItem.efecto.hambre); cambios.push(`+${invItem.efecto.hambre} hambre`); }
       if (invItem.efecto?.sed)    { player.sed    = Math.min(100, player.sed    + invItem.efecto.sed);    cambios.push(`+${invItem.efecto.sed} sed`); }
@@ -670,6 +677,17 @@ const prefixCommands = [
 
       const efecto = invItem.efecto || {};
       const cambios = [];
+
+      // Fallback para items básicos sin efecto definido
+      if (!efecto.salud && !efecto.hambre && !efecto.sed) {
+        const nombreLower = invItem.nombre?.toLowerCase() || '';
+        if (nombreLower.includes('comida') || nombreLower.includes('hamburguesa') || nombreLower.includes('pizza') || invItem.id === 'comida') {
+          efecto.hambre = 30;
+        } else if (nombreLower.includes('agua') || nombreLower.includes('refresco') || nombreLower.includes('bebida') || invItem.id === 'agua') {
+          efecto.sed = 30;
+        }
+      }
+
       if (efecto.salud)  { player.salud  = Math.min(100, player.salud  + efecto.salud);  cambios.push(`+${efecto.salud} salud`); }
       if (efecto.hambre) { player.hambre = Math.min(100, player.hambre + efecto.hambre); cambios.push(`+${efecto.hambre} hambre`); }
       if (efecto.sed)    { player.sed    = Math.min(100, player.sed    + efecto.sed);    cambios.push(`+${efecto.sed} sed`); }
