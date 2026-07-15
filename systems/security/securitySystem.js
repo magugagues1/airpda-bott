@@ -3,23 +3,29 @@
 const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const GuildConfig = require('../../database/models/GuildConfig');
 const { captureEvidence } = require('../../utils/evidenceCapture');
+const { checkBlacklist } = require('../../utils/blacklist');
+
+const SECURITY_BUILD = 'security-v3-2026-07-16'; // <-- busca esta línea en tus logs al arrancar
+console.log(`[Security] Módulo cargado: ${SECURITY_BUILD}`);
 
 const CFG = {
-  SPAM_MSG_LIMIT:    12,
-  SPAM_INTERVAL_MS:  8000,
-  RAID_JOIN_LIMIT:   10,
-  RAID_JOIN_WINDOW:  10000,
+  SPAM_MSG_LIMIT:    8,          // mensajes...
+  SPAM_INTERVAL_MS:  10000,      // ...en esta ventana (10s) para contar como spam
+  RAID_JOIN_LIMIT:          10,
+  RAID_JOIN_LIMIT_SUSPICIOUS: 5,
+  RAID_JOIN_WINDOW:        10000,
+  NEW_ACCOUNT_RATIO_TRIGGER: 0.6,
   TIMEOUT_SPAM:      5 * 60_000,
   TIMEOUT_LINK:      5 * 60_000,
   TIMEOUT_MENTION:   5 * 60_000,
-  TIMEOUT_AD:       60 * 60_000,
   BAD_WORDS: ['pornografi', 'pornograph', 'onlyfans', 'hijo de puta', 'hijoputa', 'subnormal', 'mongolo', 'retrasado'],
   LOG_CHANNEL_ID: '1523771792907436125',
 };
 
+// key -> { count: number, firstTs: number }
 const spamTracker = new Map();
 const raidJoinMap = new Map();
-const imageTracker = new Map(); // userId → {date, count, warned}
+const imageTracker = new Map();
 
 function isStaff(member, config) {
   if (!member) return false;
@@ -43,8 +49,10 @@ async function secLog(guild, embed, evidenceFile = null) {
     if (evidenceFile) {
       embeds.push(new EmbedBuilder().setColor(0xef4444).setTitle('📸 Evidencia').setImage('attachment://evidencia.png').setFooter({ text: 'Generado automáticamente' }));
     }
-    await ch.send({ embeds, files }).catch(() => {});
-  } catch {}
+    await ch.send({ embeds, files }).catch(err => console.error('[Security] Error enviando log:', err.message));
+  } catch (err) {
+    console.error('[Security] Error en secLog:', err.message);
+  }
 }
 
 function makeEmbed(title, desc, color = 0xef4444) {
@@ -63,29 +71,67 @@ async function deleteUserMessages(channel, userId) {
   } catch {}
 }
 
+/**
+ * Intenta silenciar a un miembro. Devuelve { ok, reason } — nunca miente.
+ */
 async function muteUser(member, durationMs, reason) {
+  if (!member) return { ok: false, reason: 'Miembro no encontrado (¿salió del servidor?)' };
+  if (member.permissions.has(PermissionFlagsBits.Administrator)) {
+    return { ok: false, reason: 'Es administrador, exento de sanciones automáticas.' };
+  }
+  if (!member.moderatable) {
+    return { ok: false, reason: 'El bot no puede moderar a este usuario (rol del bot igual o por debajo del suyo, o le falta el permiso "Moderar miembros"). Sube el rol del bot por encima del rol de este usuario.' };
+  }
   try {
-    if (!member || member.permissions.has(PermissionFlagsBits.Administrator)) return false;
     await member.timeout(durationMs, reason);
-    return true;
-  } catch { return false; }
+    return { ok: true, reason: null };
+  } catch (err) {
+    console.error('[Security] Fallo al aplicar timeout:', err.message);
+    return { ok: false, reason: `Error de Discord: ${err.message}` };
+  }
 }
 
-// ─── Anti-Spam ────────────────────────────────────────────────────────────
+function isChannelExento(message, sec) {
+  const exentos = sec?.canalesExentos ?? [];
+  return exentos.includes(message.channel.id);
+}
+
+/** Envía el embed de sanción, avisando claramente si el mute falló de verdad */
+async function announceSanction(message, title, muteResult, extraDesc = '') {
+  let desc;
+  if (muteResult.ok) {
+    desc = `<@${message.author.id}> silenciado. ${extraDesc}`;
+  } else {
+    desc = `⚠️ <@${message.author.id}> **debería** haber sido silenciado pero falló: ${muteResult.reason}\n${extraDesc}`;
+  }
+  const embed = makeEmbed(title, desc, muteResult.ok ? 0xef4444 : 0xf59e0b);
+  await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000)).catch(() => {});
+  return embed;
+}
+
+// ─── Anti-Spam (contador simple, sin arrays raros) ────────────────────────
 async function handleAntiSpam(message, sec) {
   if (sec.antiSpam === false) return false;
   const key = `${message.author.id}_${message.guild.id}`;
   const now = Date.now();
-  const entries = (spamTracker.get(key) ?? []).filter(e => now - e.ts < CFG.SPAM_INTERVAL_MS);
-  entries.push({ ts: now });
-  spamTracker.set(key, entries);
-  if (entries.lengthh < CFG.SPAM_MSG_LIMIT) return false;
+  const tracked = spamTracker.get(key);
+
+  let entry;
+  if (!tracked || (now - tracked.firstTs) > CFG.SPAM_INTERVAL_MS) {
+    // Nueva ventana
+    entry = { count: 1, firstTs: now };
+  } else {
+    entry = { count: tracked.count + 1, firstTs: tracked.firstTs };
+  }
+  spamTracker.set(key, entry);
+
+  if (entry.count < CFG.SPAM_MSG_LIMIT) return false;
+
   spamTracker.delete(key);
   const evidence = await captureEvidence(message, 'Spam masivo').catch(() => null);
   await deleteUserMessages(message.channel, message.author.id);
-  await muteUser(message.member, CFG.TIMEOUT_SPAM, 'Anti-Spam');
-  const embed = makeEmbed('Spam detectado', `<@${message.author.id}> silenciado **5 min** por spam.`);
-  await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
+  const muteResult = await muteUser(message.member, CFG.TIMEOUT_SPAM, 'Anti-Spam');
+  const embed = await announceSanction(message, 'Spam detectado', muteResult, `(${entry.count} mensajes en ${(CFG.SPAM_INTERVAL_MS/1000)}s)`);
   await secLog(message.guild, embed, evidence);
   return true;
 }
@@ -102,9 +148,8 @@ async function handleAntiLinks(message, sec) {
   if (!hasBlocked) return false;
   const evidence = await captureEvidence(message, 'Enlace no permitido').catch(() => null);
   await deleteUserMessages(message.channel, message.author.id);
-  await muteUser(message.member, CFG.TIMEOUT_LINK, 'Anti-Links');
-  const embed = makeEmbed('Enlace bloqueado', `<@${message.author.id}> silenciado **5 min** por enlace no permitido.`);
-  await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
+  const muteResult = await muteUser(message.member, CFG.TIMEOUT_LINK, 'Anti-Links');
+  const embed = await announceSanction(message, 'Enlace bloqueado', muteResult);
   await secLog(message.guild, embed, evidence);
   return true;
 }
@@ -115,48 +160,123 @@ async function handleAntiMentions(message, sec) {
   if (mentions < 5) return false;
   const evidence = await captureEvidence(message, 'Menciones masivas').catch(() => null);
   await deleteUserMessages(message.channel, message.author.id);
-  await muteUser(message.member, CFG.TIMEOUT_MENTION, 'Anti-Menciones');
-  const embed = makeEmbed('Menciones masivas', `<@${message.author.id}> silenciado **5 min** por ${mentions} menciones.`);
+  const muteResult = await muteUser(message.member, CFG.TIMEOUT_MENTION, 'Anti-Menciones');
+  const embed = await announceSanction(message, 'Menciones masivas', muteResult, `(${mentions} menciones)`);
+  await secLog(message.guild, embed, evidence);
+  return true;
+}
+
+// ─── Anti-Insultos ─────────────────────────────────────────────────────────
+async function announceSanction(message, title, muted, reason) {
+  const embed = makeEmbed(title, `<@${message.author.id}> ${reason}${muted ? '' : ' (no se pudo aplicar timeout)'}.`, muted ? 0xef4444 : 0xf59e0b);
   await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
-  await secLog(message.guild, embed, evidence);
-  return true;
+  return embed;
 }
 
-// ─── Anti-Insultos (solo palabras malsonantes, sin publicidad) ────────────
 async function handleAntiInsult(message, sec) {
-  if (sec.antiLinks === false) return false;
-  const content = (message.content || '').toLowerCase();
-  const hasBadWord = CFG.BAD_WORDS.some(w => content.includes(w));
-  if (!hasBadWord) return false;
+  if (sec.antiInsultos === false) return false;
+  const result = checkBlacklist(message.content || '');
+  if (!result.found) return false;
 
-  const evidence = await captureEvidence(message, 'Lenguaje inapropiado').catch(() => null);
+  const evidence = await captureEvidence(message, `Lenguaje inapropiado (${result.category})`).catch(() => null);
   await message.delete().catch(() => {});
-  const embed = makeEmbed('🤬 Lenguaje inapropiado', `<@${message.author.id}> evita ese lenguaje.`, 0xf59e0b);
-  await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 6000));
-  await secLog(message.guild, embed, evidence);
+
+  if (result.category === 'slur') {
+    const muted = await muteUser(message.member, 30 * 60_000, `Blacklist: slur (${result.category})`);
+    const embed = await announceSanction(message, '🚫 Lenguaje discriminatorio', muted, '30 min por lenguaje gravemente ofensivo.');
+    await secLog(message.guild, embed, evidence);
+  } else if (result.category === 'sexual') {
+    const muted = await muteUser(message.member, 15 * 60_000, 'Blacklist: contenido +18');
+    const embed = await announceSanction(message, '🔞 Contenido +18 bloqueado', muted, '15 min por contenido sexual/inapropiado.');
+    await secLog(message.guild, embed, evidence);
+  } else {
+    const embed = makeEmbed('🤬 Lenguaje inapropiado', `<@${message.author.id}> evita ese lenguaje.`, 0xf59e0b);
+    await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 6000)).catch(() => {});
+    await secLog(message.guild, embed, evidence);
+  }
   return true;
 }
 
-// ─── Anti-Raid de joins ───────────────────────────────────────────────────
-async function checkRaid(guild) {
-  const config = await GuildConfig.findOne({ guildId: guild.id }).lean();
+// ─── Anti-Raid de joins ────────────────────────────────────────────────────
+async function checkRaid(member) {
+  const guild = member.guild;
+  const config = await GuildConfig.findOne({ guildId: guild.id });
   if (!config) return false;
   const sec = config.security || {};
   if (sec.antiRaid === false) return false;
-  if (sec.raidMode) return true;
+
+  if (sec.raidMode) {
+    const cooldownMs = (sec.raidCooldownMinutes ?? 15) * 60_000;
+    const since = sec.raidModeSince ? sec.raidModeSince.getTime() : 0;
+    if (since && (Date.now() - since) > cooldownMs) {
+      sec.raidMode = false;
+      sec.raidModeSince = null;
+      config.security = sec;
+      config.markModified('security');
+      await config.save();
+      const ch = await guild.channels.fetch(sec.logChannelId || CFG.LOG_CHANNEL_ID).catch(() => null);
+      if (ch) await ch.send({ embeds: [makeEmbed('✅ Raid mode desactivado', 'El modo raid expiró automáticamente.', 0x22c55e)] }).catch(() => {});
+    } else {
+      await handleMemberDuringRaid(member, sec);
+      return true;
+    }
+  }
+
   const key = guild.id;
   const now = Date.now();
-  const joins = (raidJoinMap.get(key) ?? []).filter(t => now - t < CFG.RAID_JOIN_WINDOW);
-  joins.push(now);
+  const accountAgeDays = (now - member.user.createdTimestamp) / 86_400_000;
+  const joins = (raidJoinMap.get(key) ?? []).filter(j => now - j.ts < CFG.RAID_JOIN_WINDOW);
+  joins.push({ ts: now, accountAgeDays });
   raidJoinMap.set(key, joins);
-  if (joins.length >= CFG.RAID_JOIN_LIMIT) {
-    await GuildConfig.updateOne({ guildId: guild.id }, { 'security.raidMode': true });
-    const embed = makeEmbed('🚨 RAID DE JOINS', `**${joins.length} uniones** en <10s. Servidor en modo raid.`, 0xef4444);
+
+  const newAccountThresholdDays = sec.minAccountAgeDays ?? 3;
+  const newAccounts = joins.filter(j => j.accountAgeDays < newAccountThresholdDays).length;
+  const newAccountRatio = joins.length ? newAccounts / joins.length : 0;
+
+  const hardTrigger = joins.length >= CFG.RAID_JOIN_LIMIT;
+  const suspiciousTrigger = joins.length >= CFG.RAID_JOIN_LIMIT_SUSPICIOUS && newAccountRatio >= CFG.NEW_ACCOUNT_RATIO_TRIGGER;
+
+  if (hardTrigger || suspiciousTrigger) {
+    raidJoinMap.delete(key);
+    sec.raidMode = true;
+    sec.raidModeSince = new Date();
+    config.security = sec;
+    config.markModified('security');
+    await config.save();
+
+    if (sec.verificationLockdown !== false) {
+      try { await guild.setVerificationLevel(3, 'Anti-raid: modo raid activado'); } catch (err) { console.error('[Security] No se pudo subir verificationLevel:', err.message); }
+    }
+
+    const embed = makeEmbed(
+      '🚨 RAID DETECTADO',
+      `**${joins.length} uniones** en <10s (${newAccounts} cuentas nuevas, ratio ${(newAccountRatio * 100).toFixed(0)}%).\n` +
+      `Servidor en **modo raid** ${sec.raidCooldownMinutes ?? 15} min (se desactiva solo).\n` +
+      `Verificación subida temporalmente.`,
+      0xef4444
+    );
     const ch = await guild.channels.fetch(sec.logChannelId || CFG.LOG_CHANNEL_ID).catch(() => null);
-    if (ch) await ch.send({ content: '@everyone', embeds: [embed] }).catch(() => {});
+    if (ch) await ch.send({ content: '@here', embeds: [embed] }).catch(() => {});
+
+    await handleMemberDuringRaid(member, sec);
     return true;
   }
+
   return false;
+}
+
+async function handleMemberDuringRaid(member, sec) {
+  const action = sec.autoActionNewAccounts ?? 'none';
+  if (action === 'none') return;
+  const ageDays = (Date.now() - member.user.createdTimestamp) / 86_400_000;
+  const minAge = sec.minAccountAgeDays ?? 3;
+  if (ageDays >= minAge) return;
+  try {
+    if (action === 'kick') await member.kick('Anti-raid: cuenta nueva durante raid activo');
+    else if (action === 'timeout') await member.timeout(60 * 60_000, 'Anti-raid: cuenta nueva durante raid activo');
+  } catch (err) {
+    console.error('[Security] Error en handleMemberDuringRaid:', err.message);
+  }
 }
 
 // ─── Anti-Imagen Spam ────────────────────────────────────────────────────
@@ -166,12 +286,8 @@ async function handleAntiImageSpam(message, sec) {
 
   const userId = message.author.id;
   const today = new Date().toDateString();
-  const entry = imageTracker.get(userId) || { date: today, count: 0, warned: false };
-
-  // Reset si es otro día
-  if (entry.date !== today) {
-    imageTracker.set(userId, { date: today, count: 0, warned: false });
-  }
+  let entry = imageTracker.get(userId) || { date: today, count: 0 };
+  if (entry.date !== today) entry = { date: today, count: 0 };
 
   const totalImages = message.attachments.size + message.embeds.filter(e => e.image || e.thumbnail).length;
   if (totalImages < 2) {
@@ -179,73 +295,56 @@ async function handleAntiImageSpam(message, sec) {
     return false;
   }
 
-  // Envió 2+ imágenes → contar como infracción
   entry.count += 1;
   imageTracker.set(userId, entry);
 
   if (entry.count === 1) {
-    // Primera infracción: eliminar + advertir
-    entry.warned = true;
-    imageTracker.set(userId, entry);
     await deleteUserMessages(message.channel, userId);
     const warnEmbed = makeEmbed('📸 Imágenes múltiples', `<@${userId}> no envíes **más de 1 imagen** seguida. Próxima vez serás silenciado 5 min.`, 0xf59e0b);
-    await message.channel.send({ embeds: [warnEmbed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
+    await message.channel.send({ embeds: [warnEmbed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000)).catch(() => {});
     const ev = await captureEvidence(message, 'Múltiples imágenes (1er aviso)').catch(() => null);
     await secLog(message.guild, warnEmbed, ev);
     return true;
   }
 
-  if (entry.count >= 2) {
-    // Segunda infracción el mismo día: timeout 5min
-    imageTracker.delete(userId);
-    const evidence = await captureEvidence(message, 'Múltiples imágenes (2º aviso)').catch(() => null);
-    await deleteUserMessages(message.channel, userId);
-    await muteUser(message.member, 5 * 60_000, 'Anti-Imagen: múltiples imágenes (2º aviso)');
-    const muteEmbed = makeEmbed('🔇 Silenciado por imágenes', `<@${userId}> silenciado **5 min** por enviar múltiples imágenes repetidamente.`);
-    await message.channel.send({ embeds: [muteEmbed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
-    await secLog(message.guild, muteEmbed, evidence);
-    return true;
-  }
-
-  imageTracker.set(userId, entry);
-  return false;
+  imageTracker.delete(userId);
+  const evidence = await captureEvidence(message, 'Múltiples imágenes (2º aviso)').catch(() => null);
+  await deleteUserMessages(message.channel, userId);
+  const muteResult = await muteUser(message.member, 5 * 60_000, 'Anti-Imagen: múltiples imágenes (2º aviso)');
+  const embed = await announceSanction(message, '🔇 Silenciado por imágenes', muteResult);
+  await secLog(message.guild, embed, evidence);
+  return true;
 }
 
-// ─── Anti-Repetición / Flood de caracteres ──────────────────────────────
+// ─── Anti-Repetición / Flood ───────────────────────────────────────────────
 async function handleAntiRepeat(message, sec) {
   if (sec.antiSpam === false) return false;
   const content = message.content || '';
   if (content.length < 50) return false;
 
-  // Detectar @everyone/@here repetido muchas veces
   const everyoneCount = (content.match(/@everyone|@here/gi) || []).length;
   if (everyoneCount >= 5) {
     const ev = await captureEvidence(message, '@everyone repetido').catch(() => null);
     await deleteUserMessages(message.channel, message.author.id);
-    await muteUser(message.member, 60 * 60_000, 'Anti-@everyone: spam de menciones');
-    const embed = makeEmbed('🔇 @everyone masivo', `<@${message.author.id}> silenciado **1 hora** por spam de @everyone (${everyoneCount}x).`, 0xef4444);
-    await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
+    const muteResult = await muteUser(message.member, 60 * 60_000, 'Anti-@everyone: spam de menciones');
+    const embed = await announceSanction(message, '🔇 @everyone masivo', muteResult, `(${everyoneCount}x)`);
     await secLog(message.guild, embed, ev);
     return true;
   }
 
-  // Detectar flood de caracteres repetidos
   const letters = content.replace(/[\s\n\r]/g, '');
-  if (letters.length < 30) return false;
+  if (letters.length < 100) return false; // antes 30, subido para evitar falsos positivos con mensajes cortos
   const uniqueChars = new Set(letters).size;
-  const ratio = letters.length > 0 ? uniqueChars / letters.length : 1;
+  const ratio = uniqueChars / letters.length;
 
-  // Flood de mismo carácter (ratio muy bajo) — solo para mensajes muy largos
-  if (letters.length >= 100 && ratio < 0.05) {
+  if (ratio < 0.05) {
     const ev = await captureEvidence(message, 'Flood de caracteres').catch(() => null);
     await deleteUserMessages(message.channel, message.author.id);
-    await muteUser(message.member, CFG.TIMEOUT_SPAM, 'Anti-Flood: caracteres repetidos');
-    const embed = makeEmbed('🚫 Flood detectado', `<@${message.author.id}> silenciado **5 min** por flooding (${letters.length} chars, ${uniqueChars} únicos).`, 0xf59e0b);
-    await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
+    const muteResult = await muteUser(message.member, CFG.TIMEOUT_SPAM, 'Anti-Flood: caracteres repetidos');
+    const embed = await announceSanction(message, '🚫 Flood detectado', muteResult, `(${letters.length} chars, ${uniqueChars} únicos)`);
     await secLog(message.guild, embed, ev);
     return true;
   }
-
   return false;
 }
 
@@ -259,14 +358,14 @@ async function handleSecurity(message) {
   if (sec.activo === false) return;
 
   if (isStaff(message.member, config)) return;
+  if (isChannelExento(message, sec)) return;
 
-  if (await handleAntiInsult(message, sec)) { console.log('[Security] antiInsult triggered:', message.author.tag, message.content?.slice(0,50)); return; }
-  if (await handleAntiRepeat(message, sec)) { console.log('[Security] antiRepeat triggered:', message.author.tag, message.content?.slice(0,50)); return; }
-  if (await handleAntiRepeat(message, sec)) { console.log('[Security] antiRepeat triggered:', message.author.tag, message.content?.slice(0,50)); return; }
-  if (await handleAntiLinks(message, sec)) { console.log('[Security] antiLinks triggered:', message.author.tag, message.content?.slice(0,50)); return; }
-  if (await handleAntiMentions(message, sec)) { console.log('[Security] antiMentions triggered:', message.author.tag); return; }
-  if (await handleAntiImageSpam(message, sec)) { console.log('[Security] antiImage triggered:', message.author.tag); return; }
-  if (await handleAntiSpam(message, sec)) { console.log('[Security] antiSpam triggered:', message.author.tag); return; }
+  if (await handleAntiInsult(message, sec)) return;
+  if (await handleAntiRepeat(message, sec)) return;
+  if (await handleAntiLinks(message, sec)) return;
+  if (await handleAntiMentions(message, sec)) return;
+  if (await handleAntiImageSpam(message, sec)) return;
+  if (await handleAntiSpam(message, sec)) return;
 }
 
 module.exports = { handleSecurity, checkRaid, isStaff };
