@@ -1,5 +1,7 @@
+const fs = require('fs');
+const path = require('path');
 const { AttachmentBuilder } = require('discord.js');
-const { getSlotCenter } = require('./inventoryGrid');
+const { getSlotCenter, SLOTS } = require('./inventoryGrid');
 const { downloadEmojiImage } = require('./emojiIcon');
 
 async function renderInventoryImage(items) {
@@ -20,28 +22,54 @@ async function renderInventoryImage(items) {
       ctx.fillRect(0, 0, 1536, 1024);
     }
 
-    for (let i = 0; i < Math.min(items.length, 20); i++) {
+    const maxItems = Math.min(items.length, SLOTS.length);
+
+    for (let i = 0; i < maxItems; i++) {
       const item = items[i];
       const center = getSlotCenter(i);
+      if (!center) continue;
 
+      // Emoji icon (tamaño 140x140 dentro del slot 290x200)
       const emojiPath = await downloadEmojiImage(item.emoji || '📦');
       if (emojiPath) {
         try {
           const icon = await cv.loadImage(emojiPath);
-          const size = 64;
-          ctx.drawImage(icon, center.x - size / 2, center.y - size / 2 - 10, size, size);
+          const iconSize = 130;
+          const iconX = center.x - iconSize / 2;
+          const iconY = center.y - iconSize / 2 - 8;
+          ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
         } catch {}
       }
 
+      // Nombre del item debajo del icono
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '18px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(item.nombre.length > 14 ? item.nombre.slice(0, 12) + '..' : item.nombre, center.x, center.y + 58);
+
+      // Badge de cantidad (esquina superior derecha del slot)
       if (item.cantidad > 1) {
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        const badgeX = center.x + 20, badgeY = center.y - 30;
-        ctx.beginPath(); ctx.arc(badgeX, badgeY, 14, 0, Math.PI * 2); ctx.fill();
+        const text = `x${item.cantidad}`;
+        ctx.font = 'bold 22px Arial, sans-serif';
+
+        // Círculo de fondo
+        const metrics = ctx.measureText(text);
+        const badgeW = metrics.width + 20;
+        const badgeH = 30;
+        const badgeX = center.x + 120;
+        const badgeY = center.y - 88;
+
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.beginPath();
+        ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 15);
+        ctx.fill();
+
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 14px Arial';
+        ctx.font = 'bold 18px Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`x${item.cantidad}`, badgeX, badgeY);
+        ctx.fillText(text, badgeX + badgeW / 2, badgeY + badgeH / 2);
       }
     }
 
@@ -51,8 +79,5 @@ async function renderInventoryImage(items) {
     return null;
   }
 }
-
-const fs = require('fs');
-const path = require('path');
 
 module.exports = { renderInventoryImage };
