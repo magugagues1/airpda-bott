@@ -53,12 +53,12 @@ async function checkVitals(message) {
     const { getPlayer } = require('../utils/helpers');
     const p = await getPlayer(message.author.id, message.author.username);
     if (!p.personajeCreado) return true;
-    if (Math.floor(p.hambre) <= 0) {
-      message.reply('🍔 **Estás muerto de hambre.** No puedes hacer acciones hasta que comas algo. Usa `!usar comida`.');
+    if (Math.floor(p.hambre) <= 5) {
+      message.reply('🍔 **Tienes hambre.** Necesitas comer antes de hacer acciones. Usa `!usar comida`.');
       return false;
     }
-    if (Math.floor(p.sed) <= 0) {
-      message.reply('💧 **Estás muerto de sed.** No puedes hacer acciones hasta que bebas algo. Usa `!usar agua`.');
+    if (Math.floor(p.sed) <= 5) {
+      message.reply('💧 **Tienes sed.** Necesitas beber antes de hacer acciones. Usa `!usar agua`.');
       return false;
     }
     return true;
@@ -70,6 +70,10 @@ async function drainVitals(message, costoHambre = 1, costoSed = 1) {
     const { getPlayer } = require('../utils/helpers');
     const p = await getPlayer(message.author.id, message.author.username);
     if (!p.personajeCreado) return;
+    // Solo drenar si pasaron al menos 10s desde el último drenaje
+    const last = p.getCooldown('vital_drain');
+    if (last && Date.now() - last.getTime() < 10000) return;
+    p.setCooldown('vital_drain', new Date());
     p.hambre = Math.max(0, (p.hambre || 100) - costoHambre);
     p.sed = Math.max(0, (p.sed || 100) - costoSed);
     await p.save();
@@ -84,7 +88,7 @@ const prefixCommands = [
     description: '!me [acción] — Tu personaje realiza una acción',
     async run(message, args) {
       if (!checkRP(message, 'me') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!me [acción]`');
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player) return message.reply('Necesitas un personaje. Usa `/personaje crear`.');
@@ -102,7 +106,7 @@ const prefixCommands = [
     description: '!do [descripción] — Describe algo en la escena',
     async run(message, args) {
       if (!checkRP(message, 'do') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!do [descripción]`');
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player) return message.reply('Necesitas un personaje.');
@@ -120,7 +124,7 @@ const prefixCommands = [
     description: '!entorno [descripción] — Describe el entorno',
     async run(message, args) {
       if (!checkRP(message, 'entorno') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!entorno [descripción]`');
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player) return message.reply('Necesitas un personaje.');
@@ -142,7 +146,7 @@ const prefixCommands = [
     description: '!susurro [texto] — Tu personaje susurra',
     async run(message, args) {
       if (!checkRP(message, 'susurro') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!susurro [texto]`');
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player) return message.reply('Necesitas un personaje.');
@@ -163,7 +167,7 @@ const prefixCommands = [
     description: '!grito [texto] — Tu personaje grita',
     async run(message, args) {
       if (!checkRP(message, 'grito') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!grito [texto]`');
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player) return message.reply('Necesitas un personaje.');
@@ -184,7 +188,7 @@ const prefixCommands = [
     description: '!pensar [texto] — Pensamientos internos',
     async run(message, args) {
       if (!checkRP(message, 'pensar') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!pensar [texto]`');
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player) return message.reply('Necesitas un personaje.');
@@ -205,7 +209,7 @@ const prefixCommands = [
     description: '!ooc [texto] — Hablar fuera de personaje',
     async run(message, args) {
       if (!checkRP(message, 'ooc') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!ooc [texto]`');
       const embed = new EmbedBuilder()
         .setColor(0x6b7280)
@@ -223,7 +227,7 @@ const prefixCommands = [
     description: '!it [texto] — Narración en tercera persona',
     async run(message, args) {
       if (!checkRP(message, 'it') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!it [texto]`');
       const player = await getPersonaje(message.author.id, message.author.username);
       const nombre = player ? player.getFullName() : message.author.username;
@@ -244,7 +248,7 @@ const prefixCommands = [
     description: '!golpear @usuario [descripción] — Acción de combate RP',
     async run(message, args) {
       if (!checkRP(message, 'golpear') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       const target = message.mentions.users.first();
       if (!target) return message.reply('Uso: `!golpear @usuario [descripción]`');
       const player = await getPersonaje(message.author.id, message.author.username);
@@ -268,7 +272,7 @@ const prefixCommands = [
     description: '!intentar [acción] — Tirada de dados (1-100)',
     async run(message, args) {
       if (!checkRP(message, 'intentar') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!intentar [acción]`');
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player) return message.reply('Necesitas un personaje.');
@@ -293,7 +297,7 @@ const prefixCommands = [
     description: '!carta [texto] — Escribir una nota o carta RP',
     async run(message, args) {
       if (!checkRP(message, 'carta') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!carta [texto]`');
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player) return message.reply('Necesitas un personaje.');
@@ -315,7 +319,7 @@ const prefixCommands = [
     description: '!anuncio [texto] — Anuncio público RP',
     async run(message, args) {
       if (!checkRP(message, 'anuncio') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!anuncio [texto]`');
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player) return message.reply('Necesitas un personaje.');
@@ -336,7 +340,7 @@ const prefixCommands = [
     description: '!dado [max=100] — Tirar dado',
     async run(message, args) {
       if (!checkRP(message, 'dado') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       const max = parseInt(args[0]) || 100;
       if (max < 2 || max > 10000) return message.reply('El máximo debe estar entre 2 y 10000.');
       const roll = Math.floor(Math.random() * max) + 1;
@@ -355,7 +359,7 @@ const prefixCommands = [
     description: '!descripcion [texto] — Describir apariencia del personaje',
     async run(message, args) {
       if (!checkRP(message, 'descripcion') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!descripcion [texto]`');
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player) return message.reply('Necesitas un personaje.');
@@ -376,7 +380,7 @@ const prefixCommands = [
     description: '!radio [texto] — Comunicación por radio',
     async run(message, args) {
       if (!checkRP(message, 'radio') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       if (!args.length) return message.reply('Uso: `!radio [texto]`');
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player) return message.reply('Necesitas un personaje.');
@@ -397,7 +401,7 @@ const prefixCommands = [
     description: '!morir — Tu personaje cae/muere en RP',
     async run(message, args) {
       if (!checkRP(message, 'morir') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player) return message.reply('Necesitas un personaje.');
       const embed = new EmbedBuilder()
@@ -417,7 +421,7 @@ const prefixCommands = [
     description: '!mirar [@usuario] — Ver la ficha pública de un personaje',
     async run(message, args) {
       if (!checkRP(message, 'mirar') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       const target = message.mentions.users.first() || message.author;
       const player = await getPlayer(target.id, target.username);
       if (!player.personajeCreado) return message.reply('❌ Esa persona no tiene personaje registrado.');
@@ -449,7 +453,7 @@ const prefixCommands = [
     description: '!dni — Ver tu tarjeta de identidad (DNI)',
     async run(message) {
       if (!checkRP(message, 'dni') || !(await checkVitals(message))) return;
-      await drainVitals(message, 2, 2);
+      await drainVitals(message, 1, 1);
       const player = await getPersonaje(message.author.id, message.author.username);
       if (!player.personajeCreado) return message.reply('❌ No tienes personaje. Usa `/personaje crear`.');
       const dni = E.getDNI(message.author.id);
