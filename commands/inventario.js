@@ -3,8 +3,10 @@
  * Slash: /inventario /equipar /desequipar /usar /tirar /dar
  * Prefix: !inv, !usar, !equipar, !tirar
  */
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { getPlayer, getInventory, formatMoney } = require('../utils/helpers');
+const { renderInventoryImage } = require('../utils/renderInventory');
+const { resolveEmoji } = require('../config/itemEmojis');
 const E = require('../utils/embeds');
 const config = require('../config');
 
@@ -43,6 +45,22 @@ const data = [
     .addIntegerOption(o => o.setName('cantidad').setDescription('Cantidad').setRequired(false).setMinValue(1)),
 ];
 
+/**
+ * Genera el adjunto de imagen del inventario (mochila + iconos de items).
+ * Devuelve { attachment, url } listos para meter en un embed:
+ *   .setImage(url) y luego reply({ embeds, files: [attachment] })
+ */
+async function buildInventoryAttachment(inv) {
+  const itemsParaRender = inv.items.map(i => ({
+    nombre: i.nombre,
+    emoji: resolveEmoji(i),
+    cantidad: i.cantidad,
+  }));
+  const buffer = await renderInventoryImage(itemsParaRender);
+  const attachment = new AttachmentBuilder(buffer, { name: 'inventario.png' });
+  return { attachment, url: 'attachment://inventario.png' };
+}
+
 async function execute(interaction, client) {
   const cmd = interaction.commandName;
 
@@ -57,7 +75,11 @@ async function execute(interaction, client) {
     const uid = target?.id || interaction.user.id;
     const nombre = target?.username || interaction.user.username;
     const inv = await getInventory(uid);
-    return interaction.reply({ embeds: [E.inventario(inv, nombre)] });
+
+    const { attachment, url } = await buildInventoryAttachment(inv);
+    const embed = E.inventario(inv, nombre).setImage(url);
+
+    return interaction.reply({ embeds: [embed], files: [attachment] });
   }
 
   if (cmd === 'equipar') {
@@ -184,7 +206,6 @@ async function execute(interaction, client) {
 
 // ─── Prefix ────────────────────────────────────────────────────────────────────
 
-// Helper compartido: consumir item por tipo desde inventario
 async function consumirItem(message, query, tipoFiltro = null) {
   const player = await getPlayer(message.author.id, message.author.username);
   if (!player.personajeCreado) return message.reply('❌ Sin personaje. Usa `/personaje crear`.');
@@ -199,7 +220,6 @@ async function consumirItem(message, query, tipoFiltro = null) {
       (i.nombre && i.nombre.toLowerCase().includes(q)),
     );
   } else if (tipoFiltro) {
-    // Usar el primer item disponible del tipo indicado
     item = inv.items.find(i => i.tipo === tipoFiltro || (tipoFiltro === 'bebida' && i.tipo === 'bebida') || (tipoFiltro === 'comida' && i.tipo === 'comida'));
   }
 
@@ -267,11 +287,14 @@ const prefixCommands = [
     async run(message, args) {
       const target = message.mentions.users.first() || message.author;
       const inv = await getInventory(target.id);
-      return message.reply({ embeds: [E.inventario(inv, target.username)] });
+
+      const { attachment, url } = await buildInventoryAttachment(inv);
+      const embed = E.inventario(inv, target.username).setImage(url);
+
+      return message.reply({ embeds: [embed], files: [attachment] });
     },
   },
 
-  // !usar [item] — Usar cualquier consumible
   {
     name: 'usar',
     aliases: ['use', 'consumir'],
@@ -282,7 +305,6 @@ const prefixCommands = [
     },
   },
 
-  // !beber [item] — Beber algo del inventario
   {
     name: 'beber',
     aliases: ['drink', 'tomar'],
@@ -293,7 +315,6 @@ const prefixCommands = [
     },
   },
 
-  // !comer [item] — Comer algo del inventario
   {
     name: 'comer',
     aliases: ['eat', 'alimentar'],
