@@ -51,14 +51,20 @@ const data = [
  *   .setImage(url) y luego reply({ embeds, files: [attachment] })
  */
 async function buildInventoryAttachment(inv) {
-  const itemsParaRender = inv.items.map(i => ({
-    nombre: i.nombre,
-    emoji: resolveEmoji(i),
-    cantidad: i.cantidad,
-  }));
-  const buffer = await renderInventoryImage(itemsParaRender);
-  const attachment = new AttachmentBuilder(buffer, { name: 'inventario.png' });
-  return { attachment, url: 'attachment://inventario.png' };
+  try {
+    const itemsParaRender = inv.items.map(i => ({
+      nombre: i.nombre,
+      emoji: resolveEmoji(i),
+      cantidad: i.cantidad,
+    }));
+    const buffer = await renderInventoryImage(itemsParaRender);
+    if (!buffer) return { attachment: null, url: null };
+    const attachment = new AttachmentBuilder(buffer, { name: 'inventario.png' });
+    return { attachment, url: 'attachment://inventario.png' };
+  } catch (e) {
+    console.error('[InvAttach]', e.message);
+    return { attachment: null, url: null };
+  }
 }
 
 async function execute(interaction, client) {
@@ -289,9 +295,11 @@ const prefixCommands = [
       const inv = await getInventory(target.id);
 
       const { attachment, url } = await buildInventoryAttachment(inv);
-      const embed = E.inventario(inv, target.username).setImage(url);
-
-      return message.reply({ embeds: [embed], files: [attachment] });
+      if (attachment && url) {
+        const embed = E.inventario(inv, target.username).setImage(url);
+        return message.reply({ embeds: [embed], files: [attachment] });
+      }
+      return message.reply({ embeds: [E.inventario(inv, target.username)] });
     },
   },
 
