@@ -1,48 +1,58 @@
 const { AttachmentBuilder } = require('discord.js');
+const { getSlotCenter } = require('./inventoryGrid');
+const { downloadEmojiImage } = require('./emojiIcon');
 
 async function renderInventoryImage(items) {
   try {
     const cv = require('canvas');
-    const size = Math.min(items.length * 40 + 60, 800);
-    const canvas = cv.createCanvas(400, Math.max(size, 100));
-    const ctx = canvas.getContext('2d');
+    const invBg = path.join(__dirname, '..', 'assets', 'inv.png');
+    let canvas, ctx;
 
-    ctx.fillStyle = '#0d1428';
-    ctx.fillRect(0, 0, 400, Math.max(size, 100));
-
-    ctx.fillStyle = '#3b82f6';
-    ctx.font = 'bold 16px Arial, sans-serif';
-    ctx.fillText('🎒 INVENTARIO', 15, 30);
-
-    ctx.strokeStyle = '#1a2a4a';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(15, 40);
-    ctx.lineTo(385, 40);
-    ctx.stroke();
-
-    let y = 55;
-    for (const item of items.slice(0, 30)) {
-      const emoji = item.emoji || '📦';
-      ctx.fillStyle = '#e2e8f0';
-      ctx.font = '13px Arial, sans-serif';
-      ctx.fillText(`${emoji} ${item.nombre}`, 20, y);
-      ctx.fillStyle = '#64748b';
-      ctx.font = '11px Arial, sans-serif';
-      ctx.fillText(`x${item.cantidad}`, 340, y);
-      y += 28;
+    if (fs.existsSync(invBg)) {
+      const img = await cv.loadImage(invBg);
+      canvas = cv.createCanvas(img.width, img.height);
+      ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+    } else {
+      canvas = cv.createCanvas(1536, 1024);
+      ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#0d1428';
+      ctx.fillRect(0, 0, 1536, 1024);
     }
 
-    if (items.length > 30) {
-      ctx.fillStyle = '#475569';
-      ctx.font = '11px Arial, sans-serif';
-      ctx.fillText(`... y ${items.length - 30} items más`, 20, y + 5);
+    for (let i = 0; i < Math.min(items.length, 20); i++) {
+      const item = items[i];
+      const center = getSlotCenter(i);
+
+      const emojiPath = await downloadEmojiImage(item.emoji || '📦');
+      if (emojiPath) {
+        try {
+          const icon = await cv.loadImage(emojiPath);
+          const size = 64;
+          ctx.drawImage(icon, center.x - size / 2, center.y - size / 2 - 10, size, size);
+        } catch {}
+      }
+
+      if (item.cantidad > 1) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        const badgeX = center.x + 20, badgeY = center.y - 30;
+        ctx.beginPath(); ctx.arc(badgeX, badgeY, 14, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`x${item.cantidad}`, badgeX, badgeY);
+      }
     }
 
     return canvas.toBuffer();
-  } catch {
+  } catch (e) {
+    console.error('[RenderInventory]', e.message);
     return null;
   }
 }
+
+const fs = require('fs');
+const path = require('path');
 
 module.exports = { renderInventoryImage };
