@@ -9,20 +9,20 @@ let _fontsRegistered = false;
 function getCanvas() {
   if (_cv === undefined) {
     try {
-      _cv = require('canvas');
-    } catch {
+      _cv = require('@napi-rs/canvas');
+    } catch (err) {
       _cv = null;
-      console.warn('[Evidence] canvas no encontrado — las capturas estarán desactivadas.');
+      console.warn('[Evidence] @napi-rs/canvas no encontrado:', err.message);
     }
   }
   if (_cv && !_fontsRegistered) {
     _fontsRegistered = true;
     try {
       const dir = path.join(__dirname, '..', 'assets', 'fonts');
-      _cv.registerFont(path.join(dir, 'Inter-Regular.ttf'), { family: 'UIFont', weight: 'normal' });
-      _cv.registerFont(path.join(dir, 'Inter-Bold.ttf'), { family: 'UIFont', weight: 'bold' });
+      _cv.GlobalFonts.registerFromPath(path.join(dir, 'Inter-Regular.ttf'), 'UIFont');
+      _cv.GlobalFonts.registerFromPath(path.join(dir, 'Inter-Bold.ttf'), 'UIFont');
     } catch (err) {
-      console.warn('[Evidence] No se pudieron registrar fuentes propias, se usarán fuentes del sistema (pueden faltar):', err.message);
+      console.warn('[Evidence] No se pudieron registrar fuentes propias:', err.message);
     }
   }
   return _cv;

@@ -6,8 +6,8 @@ const { getItemImage } = require('../config/itemImages');
 
 async function renderInventoryImage(items) {
   try {
-    const cv = require('canvas');
-try { cv.registerFont('C:/Users/maru/Desktop/M/airp-bot/scripts/../assets/fonts/Inter-Regular.ttf', { family: 'UIFont' }); cv.registerFont('C:/Users/maru/Desktop/M/airp-bot/scripts/../assets/fonts/Inter-Bold.ttf', { family: 'UIFont', weight: 'bold' }); } catch(e) { console.error('[Font]', e.message); }
+    const cv = require('@napi-rs/canvas');
+try { cv.GlobalFonts.registerFromPath(path.join(__dirname, '..', 'assets', 'fonts', 'Inter-Regular.ttf'), 'UIFont'); cv.GlobalFonts.registerFromPath(path.join(__dirname, '..', 'assets', 'fonts', 'Inter-Bold.ttf'), 'UIFont'); } catch(e) { console.error('[Font]', e.message); }
     const invBg = path.join(__dirname, '..', 'assets', 'inv.png');
     let canvas, ctx;
 
