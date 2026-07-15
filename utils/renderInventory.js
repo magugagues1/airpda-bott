@@ -31,6 +31,7 @@ async function renderInventoryImage(items) {
       if (!center) continue;
 
       let imgPath = getItemImage(item);
+      if (!imgPath) console.error('[RenderInventory] No image for:', item.id, item.nombre);
 
       if (imgPath && fs.existsSync(imgPath)) {
         try {
@@ -52,15 +53,15 @@ async function renderInventoryImage(items) {
 
       // Nombre del item
       ctx.fillStyle = '#e2e8f0';
-      ctx.font = '18px Arial, sans-serif';
+      ctx.font = 'bold 16px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(item.nombre.length > 14 ? item.nombre.slice(0, 12) + '..' : item.nombre, center.x, center.y + 60);
+      ctx.fillText(item.nombre.length > 12 ? item.nombre.slice(0, 10) + '..' : item.nombre, center.x, center.y + 60);
 
       // Badge de cantidad
       if (item.cantidad > 1) {
         const text = `x${item.cantidad}`;
-        ctx.font = 'bold 22px Arial, sans-serif';
+        ctx.font = 'bold 16px sans-serif';
         const metrics = ctx.measureText(text);
         const badgeW = metrics.width + 20;
         const badgeH = 30;
@@ -73,7 +74,7 @@ async function renderInventoryImage(items) {
         ctx.fill();
 
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 18px Arial, sans-serif';
+        ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(text, badgeX + badgeW / 2, badgeY + badgeH / 2);
