@@ -31,7 +31,11 @@ async function renderInventoryImage(items) {
       if (!center) continue;
 
       let imgPath = getItemImage(item);
-      if (!imgPath) console.error('[RenderInventory] No image for:', item.id, item.nombre);
+      if (!imgPath) {
+        console.error('[RenderInventory] No image for:', item.id, item.nombre);
+      } else if (!fs.existsSync(imgPath)) {
+        console.error('[RenderInventory] File not found:', imgPath);
+      }
 
       if (imgPath && fs.existsSync(imgPath)) {
         try {
@@ -39,6 +43,7 @@ async function renderInventoryImage(items) {
           if (!icon) {
             icon = await cv.loadImage(imgPath);
             loadedImages.set(imgPath, icon);
+            console.log('[RenderInventory] Loaded:', imgPath.slice(-40), icon.width, 'x', icon.height);
           }
           // Calcular tamaño manteniendo aspect ratio (máx 140x120)
           const maxW = 140, maxH = 120;

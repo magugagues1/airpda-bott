@@ -58,6 +58,9 @@ client.prefixCmds  = new Collection(); // prefix commands { name -> {name, alias
   }
 })();
 
+// Check Canvas availability
+try { require('canvas'); console.log('[Canvas] ✅ Disponible'); } catch { console.log('[Canvas] ❌ No disponible'); }
+
 // ─── Command Queue — Consola Web ────────────────────────────────────────────
 const CommandQueue = require('./database/models/CommandQueue');
 
