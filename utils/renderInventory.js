@@ -2,7 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const { AttachmentBuilder } = require('discord.js');
 const { getSlotCenter, SLOTS } = require('./inventoryGrid');
-const { downloadEmojiImage } = require('./emojiIcon');
+const { getItemImage } = require('../config/itemImages');
+
+const IMAGES_DIR = path.join(__dirname, '..', 'images');
 
 async function renderInventoryImage(items) {
   try {
@@ -23,37 +25,57 @@ async function renderInventoryImage(items) {
     }
 
     const maxItems = Math.min(items.length, SLOTS.length);
+    const loadedImages = new Map();
 
     for (let i = 0; i < maxItems; i++) {
       const item = items[i];
       const center = getSlotCenter(i);
       if (!center) continue;
 
-      // Emoji icon (tamaño 140x140 dentro del slot 290x200)
-      const emojiPath = await downloadEmojiImage(item.emoji || '📦');
-      if (emojiPath) {
+      const imgFile = getItemImage(item);
+      let imgPath = null;
+
+      if (imgFile) imgPath = path.join(IMAGES_DIR, imgFile);
+      if (!imgPath || !fs.existsSync(imgPath)) {
+        // Fallback: buscar cualquier imagen que contenga parte del nombre
+        const files = fs.readdirSync(IMAGES_DIR);
+        const match = files.find(f => {
+          const name = item.nombre?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+          const fLower = f.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return fLower.includes(name) || name.includes(fLower.replace(/weapon/g, ''));
+        });
+        if (match) imgPath = path.join(IMAGES_DIR, match);
+      }
+
+      if (imgPath && fs.existsSync(imgPath)) {
         try {
-          const icon = await cv.loadImage(emojiPath);
-          const iconSize = 130;
-          const iconX = center.x - iconSize / 2;
-          const iconY = center.y - iconSize / 2 - 8;
-          ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
+          let icon = loadedImages.get(imgPath);
+          if (!icon) {
+            icon = await cv.loadImage(imgPath);
+            loadedImages.set(imgPath, icon);
+          }
+          // Calcular tamaño manteniendo aspect ratio (máx 140x120)
+          const maxW = 140, maxH = 120;
+          let iw = icon.width, ih = icon.height;
+          const scale = Math.min(maxW / iw, maxH / ih, 1);
+          iw *= scale; ih *= scale;
+          const ix = center.x - iw / 2;
+          const iy = center.y - ih / 2 - 10;
+          ctx.drawImage(icon, ix, iy, iw, ih);
         } catch {}
       }
 
-      // Nombre del item debajo del icono
+      // Nombre del item
       ctx.fillStyle = '#e2e8f0';
       ctx.font = '18px Arial, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(item.nombre.length > 14 ? item.nombre.slice(0, 12) + '..' : item.nombre, center.x, center.y + 58);
+      ctx.fillText(item.nombre.length > 14 ? item.nombre.slice(0, 12) + '..' : item.nombre, center.x, center.y + 60);
 
-      // Badge de cantidad (esquina superior derecha del slot)
+      // Badge de cantidad
       if (item.cantidad > 1) {
         const text = `x${item.cantidad}`;
         ctx.font = 'bold 22px Arial, sans-serif';
-
-        // Círculo de fondo
         const metrics = ctx.measureText(text);
         const badgeW = metrics.width + 20;
         const badgeH = 30;
