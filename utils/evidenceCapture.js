@@ -1,9 +1,11 @@
 'use strict';
 
+const path = require('path');
 const { AttachmentBuilder } = require('discord.js');
 
-// ─── Lazy-load canvas — si no está instalado el bot no crashea ────────────────
 let _cv = undefined;
+let _fontsRegistered = false;
+
 function getCanvas() {
   if (_cv === undefined) {
     try {
@@ -11,6 +13,16 @@ function getCanvas() {
     } catch {
       _cv = null;
       console.warn('[Evidence] canvas no encontrado — las capturas estarán desactivadas.');
+    }
+  }
+  if (_cv && !_fontsRegistered) {
+    _fontsRegistered = true;
+    try {
+      const dir = path.join(__dirname, '..', 'assets', 'fonts');
+      _cv.registerFont(path.join(dir, 'Inter-Regular.ttf'), { family: 'UIFont', weight: 'normal' });
+      _cv.registerFont(path.join(dir, 'Inter-Bold.ttf'), { family: 'UIFont', weight: 'bold' });
+    } catch (err) {
+      console.warn('[Evidence] No se pudieron registrar fuentes propias, se usarán fuentes del sistema (pueden faltar):', err.message);
     }
   }
   return _cv;
@@ -93,11 +105,11 @@ async function captureEvidence(message, reason = 'Infracción detectada') {
     // Pastilla azul de escudo
     ctx.fillStyle = DC.BLUE;
     fillRoundRect(ctx, PAD, 10, 18, 18, 4);
-    ctx.font = 'bold 11px sans-serif';
+    ctx.font = 'bold 11px "UIFont"';
     ctx.fillStyle = DC.WHITE;
     ctx.fillText('S', PAD + 5, 23);
 
-    ctx.font = 'bold 13px sans-serif';
+    ctx.font = 'bold 13px "UIFont"';
     ctx.fillStyle = DC.WHITE;
     ctx.fillText('EVIDENCIA DE INFRACCION  —  Brooklyn Nights', PAD + 24, 24);
 
@@ -121,7 +133,7 @@ async function captureEvidence(message, reason = 'Infracción detectada') {
       ctx.beginPath();
       ctx.arc(avCX, avCY, AV / 2, 0, Math.PI * 2);
       ctx.fill();
-      ctx.font = 'bold 18px sans-serif';
+      ctx.font = 'bold 18px "UIFont"';
       ctx.fillStyle = DC.WHITE;
       ctx.textAlign = 'center';
       ctx.fillText((message.author.username?.[0] ?? '?').toUpperCase(), avCX, avCY + 7);
@@ -133,7 +145,7 @@ async function captureEvidence(message, reason = 'Infracción detectada') {
     const hex   = message.member?.displayHexColor;
     const roleColor = (hex && hex !== '#000000') ? hex : DC.WHITE;
 
-    ctx.font = 'bold 15px sans-serif';
+    ctx.font = 'bold 15px "UIFont"';
     ctx.fillStyle = roleColor;
     ctx.fillText(message.author.username, TEXT_X, nameY);
     const nameW = ctx.measureText(message.author.username).width;
@@ -145,7 +157,7 @@ async function captureEvidence(message, reason = 'Infracción detectada') {
     if (isApp) {
       ctx.fillStyle = DC.BLUE;
       fillRoundRect(ctx, TEXT_X + nameW + 5, nameY - 13, 34, 15, 3);
-      ctx.font = 'bold 10px sans-serif';
+      ctx.font = 'bold 10px "UIFont"';
       ctx.fillStyle = DC.WHITE;
       ctx.fillText(badge, TEXT_X + nameW + 10, nameY - 2);
       afterBadgeX = TEXT_X + nameW + 44;
@@ -156,14 +168,14 @@ async function captureEvidence(message, reason = 'Infracción detectada') {
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
     });
-    ctx.font = '11px sans-serif';
+    ctx.font = '11px "UIFont"';
     ctx.fillStyle = DC.MUTED;
     ctx.fillText(ts, afterBadgeX + 4, nameY);
 
     // ── Contenido del mensaje ───────────────────────────────────────────────
     y = nameY + 9;
     if (contentLines.length) {
-      ctx.font = '14px sans-serif';
+      ctx.font = '14px "UIFont"';
       ctx.fillStyle = DC.TEXT;
       for (const line of contentLines) {
         y += LINE;
@@ -171,7 +183,7 @@ async function captureEvidence(message, reason = 'Infracción detectada') {
       }
     } else {
       y += LINE;
-      ctx.font = '13px sans-serif';
+      ctx.font = '13px "UIFont"';
       ctx.fillStyle = DC.MUTED;
       ctx.fillText('[Mensaje sin texto — ver embed abajo]', TEXT_X, y);
     }
@@ -200,7 +212,7 @@ async function captureEvidence(message, reason = 'Infracción detectada') {
     // ── Ejecutado por (interaction user) ───────────────────────────────────
     if (intUser) {
       y += 8;
-      ctx.font = '12px sans-serif';
+      ctx.font = '12px "UIFont"';
       ctx.fillStyle = DC.MUTED;
       ctx.fillText(`Ejecutado por: ${intUser.username ?? intUser.id}`, TEXT_X, y + LINE);
       y += LINE;
@@ -209,7 +221,7 @@ async function captureEvidence(message, reason = 'Infracción detectada') {
     // ── Adjuntos ────────────────────────────────────────────────────────────
     if (attNames.length) {
       y += 6;
-      ctx.font = '12px sans-serif';
+      ctx.font = '12px "UIFont"';
       ctx.fillStyle = DC.LINK;
       ctx.fillText(`Adjuntos: ${attNames.join(', ')}`, TEXT_X, y + LINE);
       y += LINE;
@@ -226,11 +238,11 @@ async function captureEvidence(message, reason = 'Infracción detectada') {
     ctx.fillStyle = DC.RED;
     ctx.fillRect(PAD, y, 3, 30);
 
-    ctx.font = 'bold 12px sans-serif';
+    ctx.font = 'bold 12px "UIFont"';
     ctx.fillStyle = DC.RED;
     ctx.fillText(`Motivo: ${reason}`, PAD + 9, y + 14);
 
-    ctx.font = '11px sans-serif';
+    ctx.font = '11px "UIFont"';
     ctx.fillStyle = DC.MUTED;
     ctx.fillText(
       `Evidencia generada por brooklynnightsBot  |  ${new Date().toLocaleString('es-ES')}`,

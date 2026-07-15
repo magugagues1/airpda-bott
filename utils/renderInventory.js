@@ -7,6 +7,7 @@ const { getItemImage } = require('../config/itemImages');
 async function renderInventoryImage(items) {
   try {
     const cv = require('canvas');
+try { cv.registerFont('C:/Users/maru/Desktop/M/airp-bot/scripts/../assets/fonts/Inter-Regular.ttf', { family: 'UIFont' }); cv.registerFont('C:/Users/maru/Desktop/M/airp-bot/scripts/../assets/fonts/Inter-Bold.ttf', { family: 'UIFont', weight: 'bold' }); } catch(e) { console.error('[Font]', e.message); }
     const invBg = path.join(__dirname, '..', 'assets', 'inv.png');
     let canvas, ctx;
 
@@ -58,7 +59,7 @@ async function renderInventoryImage(items) {
 
       // Nombre del item
       ctx.fillStyle = '#e2e8f0';
-      ctx.font = 'bold 16px sans-serif';
+      ctx.font = 'bold 16px \"UIFont\"';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(item.nombre.length > 12 ? item.nombre.slice(0, 10) + '..' : item.nombre, center.x, center.y + 60);
@@ -66,7 +67,7 @@ async function renderInventoryImage(items) {
       // Badge de cantidad
       if (item.cantidad > 1) {
         const text = `x${item.cantidad}`;
-        ctx.font = 'bold 16px sans-serif';
+        ctx.font = 'bold 16px \"UIFont\"';
         const metrics = ctx.measureText(text);
         const badgeW = metrics.width + 20;
         const badgeH = 30;
@@ -79,7 +80,7 @@ async function renderInventoryImage(items) {
         ctx.fill();
 
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 14px sans-serif';
+        ctx.font = 'bold 14px \"UIFont\"';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(text, badgeX + badgeW / 2, badgeY + badgeH / 2);
