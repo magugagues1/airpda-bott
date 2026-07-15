@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const { AttachmentBuilder } = require('discord.js');
 const { getSlotCenter, SLOTS } = require('./inventoryGrid');
 const { getItemImage } = require('../config/itemImages');
