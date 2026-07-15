@@ -5,8 +5,8 @@ const GuildConfig = require('../../database/models/GuildConfig');
 const { captureEvidence } = require('../../utils/evidenceCapture');
 
 const CFG = {
-  SPAM_MSG_LIMIT:    5,
-  SPAM_INTERVAL_MS:  3000,
+  SPAM_MSG_LIMIT:    12,
+  SPAM_INTERVAL_MS:  8000,
   RAID_JOIN_LIMIT:   10,
   RAID_JOIN_WINDOW:  10000,
   TIMEOUT_SPAM:      5 * 60_000,
@@ -229,14 +229,14 @@ async function handleAntiRepeat(message, sec) {
     return true;
   }
 
-  // Detectar flood de caracteres repetidos O contenido no estándar (ASCII art, braille, etc.)
+  // Detectar flood de caracteres repetidos
   const letters = content.replace(/[\s\n\r]/g, '');
   if (letters.length < 30) return false;
   const uniqueChars = new Set(letters).size;
   const ratio = letters.length > 0 ? uniqueChars / letters.length : 1;
 
-  // Flood de mismo carácter (ratio muy bajo)
-  if (letters.length >= 50 && ratio < 0.08) {
+  // Flood de mismo carácter (ratio muy bajo) — solo para mensajes muy largos
+  if (letters.length >= 100 && ratio < 0.05) {
     const ev = await captureEvidence(message, 'Flood de caracteres').catch(() => null);
     await deleteUserMessages(message.channel, message.author.id);
     await muteUser(message.member, CFG.TIMEOUT_SPAM, 'Anti-Flood: caracteres repetidos');
@@ -244,36 +244,6 @@ async function handleAntiRepeat(message, sec) {
     await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
     await secLog(message.guild, embed, ev);
     return true;
-  }
-
-  // Detectar caracteres no estándar (Unicode blocks como braille, dingbats, etc.)
-  const nonStandard = [...letters].filter(c => c.charCodeAt(0) > 0x2000).length;
-  if (letters.length >= 50 && nonStandard / letters.length > 0.5) {
-    const ev = await captureEvidence(message, 'Caracteres no estándar').catch(() => null);
-    await deleteUserMessages(message.channel, message.author.id);
-    await muteUser(message.member, 10 * 60_000, 'Anti-Flood: caracteres Unicode no estándar');
-    const embed = makeEmbed('🚫 Contenido no estándar', `<@${message.author.id}> silenciado **10 min** por caracteres no estándar (${nonStandard}/${letters.length}).`, 0xf59e0b);
-    await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
-    await secLog(message.guild, embed, ev);
-    return true;
-  }
-
-  // Detectar subcadena repetida 8+ veces (mismo texto copiado)
-  for (let len = 2; len <= 10; len++) {
-    for (let i = 0; i <= content.length - len * 8; i++) {
-      const sub = content.substring(i, i + len);
-      if (!sub.trim()) continue;
-      const count = content.split(sub).length - 1;
-      if (count >= 8 && sub.length * count >= content.length * 0.6) {
-        const ev = await captureEvidence(message, `Patrón repetido: "${sub.slice(0, 20)}" x${count}`).catch(() => null);
-        await deleteUserMessages(message.channel, message.author.id);
-        await muteUser(message.member, CFG.TIMEOUT_SPAM, 'Anti-Flood: patrón repetido');
-        const embed = makeEmbed('🚫 Patrón repetido', `<@${message.author.id}> silenciado **5 min** por repetir "${sub.slice(0, 20)}" ${count} veces.`, 0xf59e0b);
-        await message.channel.send({ embeds: [embed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 8000));
-        await secLog(message.guild, embed, ev);
-        return true;
-      }
-    }
   }
 
   return false;
