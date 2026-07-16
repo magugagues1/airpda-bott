@@ -88,29 +88,46 @@ async function renderInventoryImage(items) {
           ctx.drawImage(icon, ix, iy, iw, ih);
         }
 
-        ctx.fillStyle = '#e2e8f0';
-        ctx.font = 'bold 16px "UIFont"';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const nombre = item?.nombre || '???';
-        ctx.fillText(nombre.length > 12 ? nombre.slice(0, 10) + '..' : nombre, center.x, center.y + 60);
-
-        if (item?.cantidad > 1) {
-          const text = `x${item.cantidad}`;
+        // Nombre del item
+        try {
+          ctx.fillStyle = '#e2e8f0';
           ctx.font = 'bold 16px "UIFont"';
-          const metrics = ctx.measureText(text);
-          const badgeW = metrics.width + 20;
-          const badgeH = 30;
-          const badgeX = center.x + 120;
-          const badgeY = center.y - 88;
-          ctx.fillStyle = 'rgba(0,0,0,0.75)';
-          drawRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, 15);
-          ctx.fill();
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 14px "UIFont"';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(text, badgeX + badgeW / 2, badgeY + badgeH / 2);
+          const nombre = item?.nombre || '???';
+          ctx.fillText(nombre.length > 12 ? nombre.slice(0, 10) + '..' : nombre, center.x, center.y + 60);
+        } catch (nameErr) {
+          console.error('[RenderInventory] Error dibujando nombre en slot', i, ':', nameErr.message);
+        }
+
+        // Badge de cantidad — blanco, legible
+        if (item?.cantidad > 1) {
+          try {
+            const text = `x${item.cantidad}`;
+            ctx.font = 'bold 16px "UIFont"';
+            const metrics = ctx.measureText(text);
+            const badgeW = Math.max(metrics.width + 20, 34);
+            const badgeH = 30;
+            const badgeX = center.x + 120;
+            const badgeY = center.y - 88;
+
+            ctx.fillStyle = '#ffffff';
+            drawRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, 15);
+            ctx.fill();
+
+            ctx.strokeStyle = '#00000030';
+            ctx.lineWidth = 1;
+            drawRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, 15);
+            ctx.stroke();
+
+            ctx.fillStyle = '#0d1428';
+            ctx.font = 'bold 14px "UIFont"';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, badgeX + badgeW / 2, badgeY + badgeH / 2);
+          } catch (badgeErr) {
+            console.error('[RenderInventory] Error dibujando badge en slot', i, ':', badgeErr.message);
+          }
         }
       } catch (itemErr) {
         console.error('[RenderInventory] Error en slot', i, ':', itemErr.message);
