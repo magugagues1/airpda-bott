@@ -1,9 +1,11 @@
 'use strict';
 
-const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { PermissionFlagsBits, EmbedBuilder, ApplicationIntegrationType } = require('discord.js');
 const GuildConfig = require('../../database/models/GuildConfig');
 const { captureEvidence } = require('../../utils/evidenceCapture');
 const { checkBlacklist } = require('../../utils/blacklist');
+
+const EXTERNAL_APP_WHITELIST = [];
 
 const SECURITY_BUILD = 'security-v3-2026-07-16'; // <-- busca esta línea en tus logs al arrancar
 console.log(`[Security] Módulo cargado: ${SECURITY_BUILD}`);
@@ -109,6 +111,56 @@ async function announceSanction(message, title, muteResult, extraDesc = '') {
   return embed;
 }
 
+// ─── Anti-External Apps (User-Install Raid) ──────────────────────────────
+async function handleExternalAppRaid(message, sec) {
+  if (sec.antiExternalApps === false) return false;
+  const meta = message.interactionMetadata ?? message.interaction ?? null;
+  if (!meta) return false;
+  const appId = message.applicationId;
+  if (appId && EXTERNAL_APP_WHITELIST.includes(appId)) return false;
+  const owners = meta.authorizingIntegrationOwners;
+  const isGuildInstalled = owners && (
+    owners.has?.(ApplicationIntegrationType.GuildInstall) ||
+    owners[ApplicationIntegrationType.GuildInstall] !== undefined
+  );
+  if (isGuildInstalled) return false;
+  const invoker = meta.user ?? null;
+  if (!invoker) return false;
+  const evidence = await captureEvidence(message, 'Uso de app externa no autorizada (raid)').catch(() => null);
+  await message.delete().catch(() => {});
+  await deleteUserMessages(message.channel, message.author.id).catch(() => {});
+  const action = sec.externalAppAction ?? 'ban';
+  let actionResult = { ok: false, reason: 'Sin acción configurada' };
+  try {
+    if (action === 'ban') {
+      await message.guild.members.ban(invoker.id, { reason: `Anti-raid: uso de app externa (${appId ?? 'desconocida'})`, deleteMessageSeconds: 3600 });
+      actionResult = { ok: true, reason: null };
+    } else if (action === 'kick') {
+      const member = await message.guild.members.fetch(invoker.id).catch(() => null);
+      if (member) { await member.kick('Anti-raid: uso de app externa'); actionResult = { ok: true, reason: null }; }
+      else actionResult = { ok: false, reason: 'Miembro no encontrado' };
+    } else if (action === 'timeout') {
+      const member = await message.guild.members.fetch(invoker.id).catch(() => null);
+      if (member) { await member.timeout(60 * 60_000, 'Anti-raid: uso de app externa'); actionResult = { ok: true, reason: null }; }
+      else actionResult = { ok: false, reason: 'Miembro no encontrado' };
+    }
+  } catch (err) {
+    actionResult = { ok: false, reason: err.message };
+  }
+  const embed = new EmbedBuilder()
+    .setColor(0xef4444)
+    .setTitle('🚨 App externa de raid detectada y bloqueada')
+    .setDescription(
+      `**Usuario:** <@${invoker.id}> (\`${invoker.id}\`)\n` +
+      `**App usada:** \`${appId ?? 'desconocida'}\`\n` +
+      `**Acción:** ${actionResult.ok ? `✅ ${action.toUpperCase()} aplicado` : `⚠️ Falló (${actionResult.reason})`}\n` +
+      `Mensaje eliminado. Revisa \`Server Settings → Roles → Apps Permissions → Use External Apps\` si esto se repite.`
+    )
+    .setTimestamp();
+  await secLog(message.guild, embed, evidence);
+  return true;
+}
+
 // ─── Anti-Spam (contador simple, sin arrays raros) ────────────────────────
 async function handleAntiSpam(message, sec) {
   if (sec.antiSpam === false) return false;
@@ -186,8 +238,8 @@ async function handleAntiInsult(message, sec) {
     const embed = await announceSanction(message, '🚫 Lenguaje discriminatorio', muted, '30 min por lenguaje gravemente ofensivo.');
     await secLog(message.guild, embed, evidence);
   } else if (result.category === 'sexual') {
-    const muted = await muteUser(message.member, 15 * 60_000, 'Blacklist: contenido +18');
-    const embed = await announceSanction(message, '🔞 Contenido +18 bloqueado', muted, '15 min por contenido sexual/inapropiado.');
+    const muted = await muteUser(message.member, 60_000, 'Blacklist: contenido +18');
+    const embed = await announceSanction(message, '🔞 Contenido +18 bloqueado', muted, '1 min por contenido sexual/inapropiado.');
     await secLog(message.guild, embed, evidence);
   } else {
     const embed = makeEmbed('🤬 Lenguaje inapropiado', `<@${message.author.id}> evita ese lenguaje.`, 0xf59e0b);
@@ -350,13 +402,17 @@ async function handleAntiRepeat(message, sec) {
 
 // ─── Entrada principal ────────────────────────────────────────────────────
 async function handleSecurity(message) {
-  if (!message.guild || message.author.bot) return;
+  if (!message.guild) return;
 
   const config = await GuildConfig.findOne({ guildId: message.guild.id }).lean();
   if (!config) return;
   const sec = config.security || {};
   if (sec.activo === false) return;
 
+  // La comprobación de app externa debe correr aunque author.bot sea true
+  if (await handleExternalAppRaid(message, sec)) return;
+
+  if (message.author.bot) return;
   if (isStaff(message.member, config)) return;
   if (isChannelExento(message, sec)) return;
 

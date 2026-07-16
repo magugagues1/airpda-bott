@@ -53,7 +53,9 @@ const data = [
 async function buildInventoryAttachment(inv) {
   try {
     const itemsParaRender = inv.items.map(i => ({
+      id: i.id,
       nombre: i.nombre,
+      tipo: i.tipo,
       emoji: resolveEmoji(i),
       cantidad: i.cantidad,
     }));
@@ -83,9 +85,12 @@ async function execute(interaction, client) {
     const inv = await getInventory(uid);
 
     const { attachment, url } = await buildInventoryAttachment(inv);
-    const embed = E.inventario(inv, nombre).setImage(url);
 
-    return interaction.reply({ embeds: [embed], files: [attachment] });
+    if (attachment && url) {
+      const embed = E.inventario(inv, nombre).setImage(url);
+      return interaction.reply({ embeds: [embed], files: [attachment] });
+    }
+    return interaction.reply({ embeds: [E.inventario(inv, nombre)] });
   }
 
   if (cmd === 'equipar') {

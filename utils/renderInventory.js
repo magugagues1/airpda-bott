@@ -1,13 +1,40 @@
 const fs = require('fs');
 const path = require('path');
-const { AttachmentBuilder } = require('discord.js');
 const { getSlotCenter, SLOTS } = require('./inventoryGrid');
 const { getItemImage } = require('../config/itemImages');
 
+let _cv = undefined;
+let _fontsRegistered = false;
+
+function getCanvasLib() {
+  if (_cv === undefined) {
+    _cv = require('@napi-rs/canvas');
+  }
+  if (!_fontsRegistered) {
+    _fontsRegistered = true;
+    try {
+      _cv.GlobalFonts.registerFromPath(path.join(__dirname, '..', 'assets', 'fonts', 'Inter-Regular.ttf'), 'UIFont');
+      _cv.GlobalFonts.registerFromPath(path.join(__dirname, '..', 'assets', 'fonts', 'Inter-Bold.ttf'), 'UIFont');
+    } catch (e) {
+      console.error('[Font]', e.message);
+    }
+  }
+  return _cv;
+}
+
+function drawRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y,     x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x,     y + h, r);
+  ctx.arcTo(x,     y + h, x,     y,     r);
+  ctx.arcTo(x,     y,     x + w, y,     r);
+  ctx.closePath();
+}
+
 async function renderInventoryImage(items) {
   try {
-    const cv = require('@napi-rs/canvas');
-try { cv.GlobalFonts.registerFromPath(path.join(__dirname, '..', 'assets', 'fonts', 'Inter-Regular.ttf'), 'UIFont'); cv.GlobalFonts.registerFromPath(path.join(__dirname, '..', 'assets', 'fonts', 'Inter-Bold.ttf'), 'UIFont'); } catch(e) { console.error('[Font]', e.message); }
+    const cv = getCanvasLib();
     const invBg = path.join(__dirname, '..', 'assets', 'inv.png');
     let canvas, ctx;
 
@@ -17,6 +44,7 @@ try { cv.GlobalFonts.registerFromPath(path.join(__dirname, '..', 'assets', 'font
       ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
     } else {
+      console.error('[RenderInventory] Fondo no encontrado:', invBg);
       canvas = cv.createCanvas(1536, 1024);
       ctx = canvas.getContext('2d');
       ctx.fillStyle = '#0d1428';
@@ -27,26 +55,30 @@ try { cv.GlobalFonts.registerFromPath(path.join(__dirname, '..', 'assets', 'font
     const loadedImages = new Map();
 
     for (let i = 0; i < maxItems; i++) {
-      const item = items[i];
-      const center = getSlotCenter(i);
-      if (!center) continue;
+      try {
+        const item = items[i];
+        const center = getSlotCenter(i);
+        if (!center) continue;
 
-      let imgPath = getItemImage(item);
-      if (!imgPath) {
-        console.error('[RenderInventory] No image for:', item.id, item.nombre);
-      } else if (!fs.existsSync(imgPath)) {
-        console.error('[RenderInventory] File not found:', imgPath);
-      }
-
-      if (imgPath && fs.existsSync(imgPath)) {
+        let imgPath = null;
         try {
+          imgPath = getItemImage(item);
+        } catch (err) {
+          console.error('[RenderInventory] getItemImage() falló para', item?.id, item?.nombre, '-', err.message);
+        }
+
+        if (!imgPath) {
+          console.error('[RenderInventory] Sin imagen mapeada para:', item?.id, item?.nombre);
+        } else if (!fs.existsSync(imgPath)) {
+          console.error('[RenderInventory] Archivo no existe:', imgPath);
+        }
+
+        if (imgPath && fs.existsSync(imgPath)) {
           let icon = loadedImages.get(imgPath);
           if (!icon) {
             icon = await cv.loadImage(imgPath);
             loadedImages.set(imgPath, icon);
-            console.log('[RenderInventory] Loaded:', imgPath.slice(-40), icon.width, 'x', icon.height);
           }
-          // Calcular tamaño manteniendo aspect ratio (máx 140x120)
           const maxW = 140, maxH = 120;
           let iw = icon.width, ih = icon.height;
           const scale = Math.min(maxW / iw, maxH / ih, 1);
@@ -54,40 +86,38 @@ try { cv.GlobalFonts.registerFromPath(path.join(__dirname, '..', 'assets', 'font
           const ix = center.x - iw / 2;
           const iy = center.y - ih / 2 - 10;
           ctx.drawImage(icon, ix, iy, iw, ih);
-        } catch {}
-      }
+        }
 
-      // Nombre del item
-      ctx.fillStyle = '#e2e8f0';
-      ctx.font = 'bold 16px \"UIFont\"';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(item.nombre.length > 12 ? item.nombre.slice(0, 10) + '..' : item.nombre, center.x, center.y + 60);
-
-      // Badge de cantidad
-      if (item.cantidad > 1) {
-        const text = `x${item.cantidad}`;
-        ctx.font = 'bold 16px \"UIFont\"';
-        const metrics = ctx.measureText(text);
-        const badgeW = metrics.width + 20;
-        const badgeH = 30;
-        const badgeX = center.x + 120;
-        const badgeY = center.y - 88;
-
-        ctx.fillStyle = 'rgba(0,0,0,0.75)';
-        ctx.beginPath();
-        ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 15);
-        ctx.fill();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 14px \"UIFont\"';
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = 'bold 16px "UIFont"';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, badgeX + badgeW / 2, badgeY + badgeH / 2);
+        const nombre = item?.nombre || '???';
+        ctx.fillText(nombre.length > 12 ? nombre.slice(0, 10) + '..' : nombre, center.x, center.y + 60);
+
+        if (item?.cantidad > 1) {
+          const text = `x${item.cantidad}`;
+          ctx.font = 'bold 16px "UIFont"';
+          const metrics = ctx.measureText(text);
+          const badgeW = metrics.width + 20;
+          const badgeH = 30;
+          const badgeX = center.x + 120;
+          const badgeY = center.y - 88;
+          ctx.fillStyle = 'rgba(0,0,0,0.75)';
+          drawRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, 15);
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 14px "UIFont"';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, badgeX + badgeW / 2, badgeY + badgeH / 2);
+        }
+      } catch (itemErr) {
+        console.error('[RenderInventory] Error en slot', i, ':', itemErr.message);
       }
     }
 
-    return canvas.toBuffer();
+    return canvas.toBuffer('image/png');
   } catch (e) {
     console.error('[RenderInventory]', e.message);
     return null;

@@ -62,6 +62,7 @@ const ID_MAP = {
 };
 
 function getItemImage(item) {
+  if (!item) return null;
   const all = scanAllImages();
 
   // 1. Buscar por ID en el mapa

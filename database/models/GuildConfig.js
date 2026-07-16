@@ -65,6 +65,8 @@ const guildConfigSchema = new mongoose.Schema({
     whitelistRoles:   [String],
     canalesExentos:   [String],
     logChannelId:     { type: String, default: null },
+    antiExternalApps: { type: Boolean, default: true },
+    externalAppAction: { type: String, enum: ['ban', 'kick', 'timeout', 'none'], default: 'ban' },
   },
 
   tickets: {
