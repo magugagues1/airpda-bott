@@ -100,28 +100,23 @@ async function renderInventoryImage(items) {
           console.error('[RenderInventory] Error dibujando nombre en slot', i, ':', nameErr.message);
         }
 
-        // Badge de cantidad — blanco, legible
+        // Badge de cantidad — fondo claro con texto oscuro
         if (item?.cantidad > 1) {
           try {
             const text = `x${item.cantidad}`;
-            ctx.font = 'bold 16px "UIFont"';
-            const metrics = ctx.measureText(text);
-            const badgeW = Math.max(metrics.width + 20, 34);
-            const badgeH = 30;
-            const badgeX = center.x + 120;
-            const badgeY = center.y - 88;
+            const badgeW = 50;
+            const badgeH = 26;
+            const badgeX = center.x + 110;
+            const badgeY = center.y - 85;
+            const r = 13;
 
             ctx.fillStyle = '#ffffff';
-            drawRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, 15);
+            ctx.beginPath();
+            ctx.roundRect(badgeX, badgeY, badgeW, badgeH, r);
             ctx.fill();
 
-            ctx.strokeStyle = '#00000030';
-            ctx.lineWidth = 1;
-            drawRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, 15);
-            ctx.stroke();
-
             ctx.fillStyle = '#0d1428';
-            ctx.font = 'bold 14px "UIFont"';
+            ctx.font = 'bold 15px "UIFont"';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(text, badgeX + badgeW / 2, badgeY + badgeH / 2);
