@@ -21,6 +21,13 @@ function scanAllImages() {
   return result;
 }
 
+function normalizeStr(str) {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
 // Mapeo directo ID del item → nombre del archivo (scan encuentra la ruta)
 const ID_MAP = {
   hamburguesa: 'sirloin_burger.png', pollo_asado: 'chicken_strips.png',
@@ -59,28 +66,33 @@ const ID_MAP = {
   mira_holo: 'at_scope_holo.png',
   arma: 'weapon_pistol.png', comida: 'crisps1.png',
   bebida: 'cola.png',
+  movil: 'phone.png',
+  semillas_marihuana: 'weed_brick.png',
+  semilla_marihuana: 'weed_brick.png',
 };
 
 function getItemImage(item) {
   if (!item) return null;
   const all = scanAllImages();
+  const id = item.id?.toLowerCase();
 
   // 1. Buscar por ID en el mapa
-  const id = item.id?.toLowerCase();
   if (id && ID_MAP[id]) {
     const targetName = ID_MAP[id].toLowerCase();
     if (all[targetName]) return all[targetName];
-    // Búsqueda parcial
     for (const [k, v] of Object.entries(all)) {
       if (k.includes(targetName) || targetName.includes(k.replace('.png', ''))) return v;
     }
+    console.warn(`[itemImages] id "${id}" está en ID_MAP → "${targetName}" pero ese archivo no existe en /images`);
+  } else if (id) {
+    console.warn(`[itemImages] id "${id}" no tiene entrada en ID_MAP, probando por nombre...`);
   }
 
   // 2. Buscar por nombre del item en el catálogo completo
-  const searchName = (item.nombre || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const searchName = normalizeStr(item.nombre);
   if (searchName) {
     for (const [k, v] of Object.entries(all)) {
-      const cleanK = k.replace(/[^a-z0-9]/g, '');
+      const cleanK = normalizeStr(k.replace('.png', ''));
       if (cleanK.includes(searchName) || searchName.includes(cleanK)) return v;
     }
   }
@@ -91,6 +103,7 @@ function getItemImage(item) {
     for (const [k, v] of Object.entries(all)) if (k.includes('pistol') && !k.includes('blueprint') && !k.includes('part') && !k.includes('ammo')) return v;
   }
 
+  console.warn(`[itemImages] Sin icono para id="${id}" nombre="${item.nombre}" tipo="${item.tipo}" — considera añadirlo a ID_MAP`);
   return null;
 }
 
