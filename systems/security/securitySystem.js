@@ -21,7 +21,7 @@ const CFG = {
   TIMEOUT_LINK:      5 * 60_000,
   TIMEOUT_MENTION:   5 * 60_000,
   BAD_WORDS: ['pornografi', 'pornograph', 'onlyfans', 'hijo de puta', 'hijoputa', 'subnormal', 'mongolo', 'retrasado'],
-  LOG_CHANNEL_ID: '1523771792907436125',
+  LOG_CHANNEL_ID: '1528125569643057244',
 };
 
 // key -> { count: number, firstTs: number }
