@@ -17,7 +17,9 @@ const SEXUAL = [
 
 const SLURS = [
   'maricon', 'maricón', 'marica', 'sudaca', 'negrata', 'panchito',
-  'travolo', 'machupichu', 'sidoso',
+  'travolo', 'machupichu', 'sidoso', 'nazi', 'hitler', 'n4zi',
+  'hittler', 'naz1', 'antisemita', 'antisemitic', 'judio', 'judía',
+  'puto amo',
 ];
 
 function normalize(text) {
