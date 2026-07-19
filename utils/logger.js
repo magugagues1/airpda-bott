@@ -1,8 +1,8 @@
 const { EmbedBuilder } = require('discord.js');
 
-const CHANNEL_LOGS = '1528125569643057244';
-const CHANNEL_TRANSCRIPT = '1528125569643057244';
-const CHANNEL_RECORDS = '1528125569643057244';
+const CHANNEL_LOGS = '1510107636157386853';
+const CHANNEL_TRANSCRIPT = '1480329534485172426';
+const CHANNEL_RECORDS = '1480329605100470395';
 
 function logEmbed(title, color, fields = []) {
   const e = new EmbedBuilder()
