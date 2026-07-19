@@ -9,8 +9,11 @@ const E = require('../utils/embeds');
 const config = require('../config');
 const { ICONS, BANNERS, addImage } = require('../utils/images');
 
-const COSTO_HOSPITAL = 500;
-const COSTO_AMBULANCIA = 1500;
+const MEDIC_ROLE_ID = '1481316335496724551';
+
+function hasMedicRole(member) {
+  return member.roles.cache.has(MEDIC_ROLE_ID) || member.permissions.has('Administrator');
+}
 
 const data = [
   new SlashCommandBuilder()
@@ -102,6 +105,7 @@ async function execute(interaction, client) {
   }
 
   if (cmd === 'curar') {
+    if (!hasMedicRole(interaction.member)) return interaction.reply({ embeds: [E.err('Sin permiso', 'Solo los médicos pueden usar este comando.')], ephemeral: true });
     const healer = await getPlayer(interaction.user.id, interaction.user.username);
     if (!healer.personajeCreado) return interaction.reply({ embeds: [E.warn('Sin personaje', 'Necesitas personaje.')], ephemeral: true });
 
@@ -170,11 +174,7 @@ async function execute(interaction, client) {
   }
 
   if (cmd === 'revivir') {
-    // Solo policía/médico/admin puede revivir
-    const isStaff = interaction.member.permissions.has('Administrator') ||
-      Object.values(config.roles).some(r => r && interaction.member.roles.cache.has(r));
-
-    if (!isStaff) return interaction.reply({ embeds: [E.err('Sin permisos', 'Solo el personal autorizado puede revivir jugadores.')], ephemeral: true });
+    if (!hasMedicRole(interaction.member)) return interaction.reply({ embeds: [E.err('Sin permiso', 'Solo los médicos pueden revivir jugadores.')], ephemeral: true });
 
     const target = interaction.options.getUser('usuario');
     const targetPlayer = await getPlayer(target.id, target.username);
