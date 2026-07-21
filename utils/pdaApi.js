@@ -284,6 +284,13 @@ const api = {
     return InformePersonal.create(data);
   },
 
+  // ─── ACTUALIZAR USUARIO ───────────────────────────────────────────────────────
+
+  async actualizarUsuario(userId, data) {
+    const { User } = getModels();
+    return User.findByIdAndUpdate(userId, { $set: data }, { new: true, runValidators: true });
+  },
+
   // ─── RANGOS / DEFCON ─────────────────────────────────────────────────────────
 
   async asignarRango(userId, rango, departamento, asignadoPor) {

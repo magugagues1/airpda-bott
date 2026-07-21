@@ -8,6 +8,7 @@
  *        /pda vehiculo | /pda arma
  *        /pda operativos | /pda investigaciones
  *        /pda ck | /pda sync | /pda stats
+ *        /pda editar-usuario
  */
 const { SlashCommandBuilder } = require('discord.js');
 const { buscar, id } = require('./pda/buscar');
@@ -16,6 +17,7 @@ const { buscado, peligroso, nota } = require('./pda/estado');
 const { informes, crearInforme, denuncias, crearDenuncia } = require('./pda/informes');
 const { vehiculo, arma, casa, registrarCasa, registrarArma } = require('./pda/vehiculos');
 const { operativos, investigaciones, ck, sync, stats, rango, defcon, ckAdmin } = require('./pda/misc');
+const { editarUsuario } = require('./pda/usuario');
 
 const data = new SlashCommandBuilder()
   .setName('pda')
@@ -147,6 +149,17 @@ const data = new SlashCommandBuilder()
 
   .addSubcommand(s => s.setName('sync').setDescription('Sincronizar tu perfil Discord con la PDA'))
 
+  .addSubcommand(s => s.setName('editar-usuario')
+    .setDescription('[POLICÍA] Editar datos de un ciudadano en la PDA')
+    .addStringOption(o => o.setName('id').setDescription('ID o DNI del ciudadano').setRequired(true))
+    .addStringOption(o => o.setName('nombre').setDescription('Nuevo nombre').setRequired(false).setMaxLength(50))
+    .addStringOption(o => o.setName('apellido').setDescription('Nuevo apellido').setRequired(false).setMaxLength(50))
+    .addStringOption(o => o.setName('dni').setDescription('Nuevo número de DNI').setRequired(false).setMaxLength(20))
+    .addStringOption(o => o.setName('id-numero').setDescription('Nuevo número de ID').setRequired(false).setMaxLength(20))
+    .addStringOption(o => o.setName('psn').setDescription('Nuevo PSN ID').setRequired(false).setMaxLength(30))
+    .addStringOption(o => o.setName('fecha-nacimiento').setDescription('Nueva fecha de nacimiento').setRequired(false).setMaxLength(20))
+    .addStringOption(o => o.setName('foto').setDescription('Nueva URL de foto de personaje').setRequired(false).setMaxLength(300)))
+
   .addSubcommand(s => s.setName('stats').setDescription('Estadísticas de sanciones activas en la PDA'));
 
 
@@ -158,6 +171,7 @@ async function execute(interaction, client) {
     informes, crearInforme, denuncias, crearDenuncia,
     vehiculo, arma, casa, registrarCasa, registrarArma,
     operativos, investigaciones, ck, sync, stats, rango, defcon, ckAdmin,
+    editarUsuario,
   };
   const handler = handlers[sub];
   if (handler) return handler(interaction, client);
