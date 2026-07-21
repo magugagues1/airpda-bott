@@ -7,8 +7,7 @@
  *        /pda denuncias | /pda crear-denuncia
  *        /pda vehiculo | /pda arma
  *        /pda operativos | /pda investigaciones
- *        /pda ck | /pda sync | /pda stats
- *        /pda editar-usuario
+ *        /pda ck | /pda sync | /pda editar-usuario
  */
 const { SlashCommandBuilder } = require('discord.js');
 const { buscar, id } = require('./pda/buscar');
@@ -158,9 +157,7 @@ const data = new SlashCommandBuilder()
     .addStringOption(o => o.setName('id-numero').setDescription('Nuevo número de ID').setRequired(false).setMaxLength(20))
     .addStringOption(o => o.setName('psn').setDescription('Nuevo PSN ID').setRequired(false).setMaxLength(30))
     .addStringOption(o => o.setName('fecha-nacimiento').setDescription('Nueva fecha de nacimiento').setRequired(false).setMaxLength(20))
-    .addStringOption(o => o.setName('foto').setDescription('Nueva URL de foto de personaje').setRequired(false).setMaxLength(300)))
-
-  .addSubcommand(s => s.setName('stats').setDescription('Estadísticas de sanciones activas en la PDA'));
+    .addStringOption(o => o.setName('foto').setDescription('Nueva URL de foto de personaje').setRequired(false).setMaxLength(300)));
 
 
 async function execute(interaction, client) {
@@ -170,7 +167,7 @@ async function execute(interaction, client) {
     buscado, peligroso, nota,
     informes, crearInforme, denuncias, crearDenuncia,
     vehiculo, arma, casa, registrarCasa, registrarArma,
-    operativos, investigaciones, ck, sync, stats, rango, defcon, ckAdmin,
+    operativos, investigaciones, ck, sync, rango, defcon, ckAdmin,
     editarUsuario,
   };
   const handler = handlers[sub];
