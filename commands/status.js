@@ -137,7 +137,9 @@ async function updateStatusEmbed(status, client) {
     const prevPublished = status.psnPublicado || '';
     const channel = await client.channels.fetch(status.channelId);
     const msg = await channel.messages.fetch(status.messageId);
-    await msg.edit({ embeds: [buildStatusEmbed(status, psn), buildPsnEmbed(status, psn)] });
+    const embeds = [buildStatusEmbed(status, psn)];
+    if (status.isOnline) embeds.push(buildPsnEmbed(status, psn));
+    await msg.edit({ embeds });
     if (normalized && prevPublished !== '' && normalized !== prevPublished) {
       notifyPsnChange(client, status.channelId, normalized, prevPublished);
     }
