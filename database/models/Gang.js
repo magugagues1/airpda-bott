@@ -27,9 +27,15 @@ const gangSchema = new mongoose.Schema({
   miembros: [miembroSchema],
   territorios: [territorioSchema],
 
+  // Config web/staff
+  rangos: [String],
+  slots: { type: Number, default: 4 },
+  rolId: { type: String, default: null },
+
   dinero: { type: Number, default: 0 },
   reputacion: { type: Number, default: 0 },
   nivel: { type: Number, default: 1 },
+  atracos: { type: Number, default: 0 },
 
   // War system
   enGuerra: { type: Boolean, default: false },

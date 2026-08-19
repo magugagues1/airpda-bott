@@ -26,6 +26,42 @@ const E = require('../utils/embeds');
 const config = require('../config');
 const { ICONS, BANNERS, addImage } = require('../utils/images');
 const GuildConfig = require('../database/models/GuildConfig');
+const Gang = require('../database/models/Gang');
+
+// ─── Progresión de banda por atracos ──────────────────────────────────────────
+async function registrarAtracoDeBanda(player, client) {
+  if (!player.gangId) return null;
+  try {
+    const gang = await Gang.findById(player.gangId);
+    if (!gang) return null;
+    gang.atracos = (gang.atracos || 0) + 1;
+    const required = (gang.nivel || 1) * 10;
+    let subio = false;
+    if (gang.atracos >= required) {
+      gang.nivel = (gang.nivel || 1) + 1;
+      gang.atracos = 0;
+      gang.reputacion = (gang.reputacion || 0) + 5;
+      subio = true;
+    }
+    await gang.save();
+    if (subio) {
+      try {
+        const u = await client.users.fetch(gang.lider);
+        await u.send({
+          embeds: [new EmbedBuilder()
+            .setColor(0x00ff88)
+            .setTitle(`⬆️ ¡${gang.nombre} subió de nivel!`)
+            .setDescription(`Tu banda alcanzó el **nivel ${gang.nivel}** a base de atracos.\nSigan haciendo atracos para seguir creciendo.`)
+            .setTimestamp()],
+        }).catch(() => {});
+      } catch {}
+    }
+    return { gangNombre: gang.nombre, subio, nivel: gang.nivel };
+  } catch (err) {
+    console.error('[Gang XP]', err.message);
+    return null;
+  }
+}
 
 // ─── Catálogo de robos ────────────────────────────────────────────────────────
 const ROBOS = {
@@ -394,6 +430,8 @@ async function ejecutarMinijuego(interaction, player, robo, inv) {
   player.addXP(rand(30, 100));
   await player.save();
 
+  const gangXp = await registrarAtracoDeBanda(player, interaction.client);
+
   // Items de botín
   const itemsGanados = [];
   for (const itemDef of robo.items) {
@@ -416,6 +454,9 @@ async function ejecutarMinijuego(interaction, player, robo, inv) {
       itemsGanados.length
         ? { name: '🎒 Items robados', value: itemsGanados.join('\n'), inline: false }
         : { name: '​', value: '​', inline: false },
+      gangXp
+        ? { name: gangXp.subio ? '⬆️ Banda subió de nivel' : gangXp.gangNombre, value: gangXp.subio ? `**${gangXp.gangNombre}** ahora es **nivel ${gangXp.nivel}**` : `Atraco sumado a la banda de ${gangXp.gangNombre}`, inline: true }
+        : { name: '​', value: '​', inline: true },
     )
     .setFooter({ text: '💡 Blanquea el dinero sucio con /blanquear' })
     .setTimestamp();
@@ -504,13 +545,15 @@ async function ejecutarMinijuegoPrefix(message, player, robo, inv) {
         player.addXP(rand(30, 80));
         await player.save();
 
+        const gangXp = await registrarAtracoDeBanda(player, message.client);
+
         await enviarAlertaPolicia(message, robo, player, false);
 
         return sent.edit({
           embeds: [new EmbedBuilder()
             .setColor(0x00ff88)
             .setTitle(`✅ Atraco exitoso — ${robo.emoji} ${robo.nombre}`)
-            .setDescription(`Has completado las **${fases} fases** con éxito.\n💰 Botín: **${formatMoney(botín)}** (dinero sucio)`)
+            .setDescription(`Has completado las **${fases} fases** con éxito.\n💰 Botín: **${formatMoney(botín)}** (dinero sucio)${gangXp ? `\n\n${gangXp.subio ? `⬆️ **${gangXp.gangNombre} subió a nivel ${gangXp.nivel}!**` : `👥 Atraco sumado a ${gangXp.gangNombre}`}` : ''}`)
             .setTimestamp()],
           components: [],
         });
@@ -758,6 +801,25 @@ async function execute(interaction, client) {
     return;
   }
 
+  // ─── ALLANAR ────────────────────────────────────────────────────────────────
+  if (cmd === 'allanar') {
+    const zona = interaction.options.getString('zona');
+    const casa = CASAS[zona];
+    if (!casa) return interaction.reply({ embeds: [E.err('Error', 'Zona inválida.')], ephemeral: true });
+    await interaction.deferReply();
+    const p = await getPlayer(interaction.user.id, interaction.user.username);
+    if (!p.personajeCreado) return interaction.editReply({ embeds: [E.err('Sin personaje', 'Necesitas un personaje.')] });
+    if (p.muerto || p.enHospital || p.enCarcel) return interaction.editReply({ embeds: [E.err('No disponible', 'No puedes allanar en tu estado actual.')] });
+    const cd = p.getCooldown('allanar');
+    if (cd && Date.now() - cd.getTime() < 3600000) {
+      const r = 3600000 - (Date.now() - cd.getTime());
+      return interaction.editReply({ embeds: [E.warn('Cooldown', `Espera **${Math.floor(r/60000)}m** para allanar otra casa.`)] });
+    }
+    p.setCooldown('allanar', new Date());
+    await p.save();
+    return ejecutarAllanamiento(interaction, p, zona);
+  }
+
   // cmd === 'atracar'
   const lugarKey = interaction.options.getString('lugar');
   const robo = ROBOS[lugarKey];
@@ -779,27 +841,12 @@ async function execute(interaction, client) {
     }
   }
 
+  if (robo.bandaOficial && !player.gangId) {
+    return interaction.editReply({ embeds: [E.err('Solo Bandas Oficiales', `El robo de **${robo.nombre}** es de nivel mayor y requiere pertenecer a una **banda oficial**. Únete a una banda (web o /banda) e inténtalo de nuevo.`)] });
+  }
+
   const inv = await getInventory(interaction.user.id);
   await ejecutarMinijuego(interaction, player, robo, inv);
-
-  // ─── ALLANAR ────────────────────────────────────────────────────────────────
-  if (cmd === 'allanar') {
-    const zona = interaction.options.getString('zona');
-    const casa = CASAS[zona];
-    if (!casa) return interaction.reply({ embeds: [E.err('Error', 'Zona inválida.')], ephemeral: true });
-    await interaction.deferReply();
-    const p = await getPlayer(interaction.user.id, interaction.user.username);
-    if (!p.personajeCreado) return interaction.editReply({ embeds: [E.err('Sin personaje', 'Necesitas un personaje.')] });
-    if (p.muerto || p.enHospital || p.enCarcel) return interaction.editReply({ embeds: [E.err('No disponible', 'No puedes allanar en tu estado actual.')] });
-    const cd = p.getCooldown('allanar');
-    if (cd && Date.now() - cd.getTime() < 3600000) {
-      const r = 3600000 - (Date.now() - cd.getTime());
-      return interaction.editReply({ embeds: [E.warn('Cooldown', `Espera **${Math.floor(r/60000)}m** para allanar otra casa.`)] });
-    }
-    p.setCooldown('allanar', new Date());
-    await p.save();
-    return ejecutarAllanamiento(interaction, p, zona);
-  }
 }
 
 // ─── ALLANAR (Robo de casas) ──────────────────────────────────────────────────
@@ -941,6 +988,10 @@ const prefixCommands = [
       if (lastRob) {
         const remaining = lastRob.getTime() + robo.cooldown - Date.now();
         if (remaining > 0) return message.reply(`⏳ Espera **${formatCooldown(remaining)}** para volver a atracar ${robo.nombre}.`);
+      }
+
+      if (robo.bandaOficial && !player.gangId) {
+        return message.reply({ embeds: [E.err('Solo Bandas Oficiales', `El robo de **${robo.nombre}** es de nivel mayor y requiere pertenecer a una **banda oficial**.`)] });
       }
 
       player.setCooldown(`rob_${robo.nombre}`, new Date());

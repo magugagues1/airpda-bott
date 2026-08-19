@@ -97,15 +97,15 @@ async function execute(interaction, client) {
     if (!targetPlayer.personajeCreado) return interaction.reply({ embeds: [E.err('Sin personaje', 'Ese usuario no tiene personaje.')], ephemeral: true });
     if (targetPlayer.gangId) return interaction.reply({ embeds: [E.err('Ya en banda', 'Ese jugador ya pertenece a una banda.')], ephemeral: true });
 
-    if (gang.miembros.length >= 20) return interaction.reply({ embeds: [E.err('Banda llena', 'La banda tiene el máximo de 20 miembros.')], ephemeral: true });
+    if (gang.miembros.length >= (gang.slots || 4)) return interaction.reply({ embeds: [E.err('Banda llena', `La banda tiene el máximo de ${gang.slots || 4} miembros. Pide al staff más slots.`)], ephemeral: true });
 
-    // Enviar invitación por DM
+    // Añadir directamente (confirmación por DM)
     try {
       const u = await client.users.fetch(target.id);
       await u.send({ embeds: [new EmbedBuilder()
         .setColor(config.colors.gang)
-        .setTitle(`👥 Invitación de banda`)
-        .setDescription(`**${player.getFullName()}** te invita a unirte a la banda **[${gang.tag}] ${gang.nombre}**.\nResponde con \`!aceptarbanda ${gang._id}\` para unirte.`)
+        .setTitle(`👥 ¡Bienvenido a ${gang.nombre}!`)
+        .setDescription(`**${player.getFullName()}** te ha añadido a la banda **[${gang.tag}] ${gang.nombre}** como **Recluta**.\nÚnete al rol de Discord y demuestra tu lealtad.`)
         .setTimestamp()] });
     } catch {}
 
@@ -114,6 +114,13 @@ async function execute(interaction, client) {
     targetPlayer.gangRango = 'Recluta';
     await gang.save();
     await targetPlayer.save();
+
+    if (gang.rolId) {
+      try {
+        const member = interaction.guild.members.cache.get(target.id) || await interaction.guild.members.fetch(target.id).catch(() => null);
+        if (member) await member.roles.add(gang.rolId).catch(() => {});
+      } catch {}
+    }
 
     return interaction.reply({ embeds: [E.ok('Miembro añadido', `**${targetPlayer.getFullName()}** se ha unido a **${gang.nombre}** como Recluta.`)] });
   }
@@ -135,6 +142,13 @@ async function execute(interaction, client) {
     await gang.save();
     await targetPlayer.save();
 
+    if (gang.rolId) {
+      try {
+        const member = interaction.guild.members.cache.get(target.id) || await interaction.guild.members.fetch(target.id).catch(() => null);
+        if (member) await member.roles.remove(gang.rolId).catch(() => {});
+      } catch {}
+    }
+
     try {
       const u = await client.users.fetch(target.id);
       await u.send(`👢 Has sido expulsado de la banda **${gang.nombre}**.`);
@@ -154,20 +168,21 @@ async function execute(interaction, client) {
     }
     if (!gang) return interaction.reply({ embeds: [E.err('Banda no encontrada', nombreBuscar ? `No existe la banda "${nombreBuscar}".` : 'No perteneces a ninguna banda.')], ephemeral: true });
 
-    const rangos = GANG_RANGOS;
+    const rangos = (gang.rangos && gang.rangos.length && gang.rangos.length <= 5) ? gang.rangos : GANG_RANGOS;
     const miembrosFormatted = gang.miembros
       .sort((a, b) => rangos.indexOf(a.rango) - rangos.indexOf(b.rango))
       .map(m => `**${m.rango}:** <@${m.discordId}>`)
       .join('\n') || '*Sin miembros*';
 
     const embed = new EmbedBuilder()
-      .setColor(parseInt(gang.color?.replace('#', ''), 16) || config.colors.gang)
+      .setColor(parseInt(String(gang.color).replace('#', ''), 16) || config.colors.gang)
       .setTitle(`👥 [${gang.tag}] ${gang.nombre}`)
       .addFields(
         { name: '👑 Líder', value: `<@${gang.lider}>`, inline: true },
-        { name: '👥 Miembros', value: `${gang.miembros.length}/20`, inline: true },
+        { name: '👥 Miembros', value: `${gang.miembros.length}/${gang.slots || 4}`, inline: true },
         { name: '🏦 Banco', value: formatMoney(gang.dinero || 0), inline: true },
         { name: '🏴 Territorios', value: `${gang.territorios?.length || 0}`, inline: true },
+        { name: '⬆️ Nivel', value: `${gang.nivel || 1} (${gang.atracos || 0}/${(gang.nivel || 1) * 10} atracos)`, inline: true },
         { name: '⚔️ Guerra activa', value: `${gang.enGuerra ? `Sí (contra ${gang.guerraContra || 'N/A'})` : 'No'}`, inline: true },
         { name: '📅 Fundada', value: `<t:${Math.floor(gang.creadoEn?.getTime() / 1000 || Date.now() / 1000)}:R>`, inline: true },
         { name: '👥 Lista de miembros', value: miembrosFormatted.slice(0, 1024), inline: false },
