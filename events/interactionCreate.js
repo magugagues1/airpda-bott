@@ -8,7 +8,9 @@ module.exports = {
   async execute(client, interaction) {
     // ─── Canales prohibidos ─────────────────────────────────────────────────
     const forbiddenChannels = ['1441818965218431029', '1500230610071982090', '1441818964748537990', '1441818964748537988'];
-    if (forbiddenChannels.includes(interaction.channelId) && interaction.isChatInputCommand()) {
+    const bypassRole = '1441818963133731016';
+    const isBypass = interaction.member?.roles.cache.has(bypassRole) || interaction.member?.permissions.has('Administrator');
+    if (!isBypass && forbiddenChannels.includes(interaction.channelId) && interaction.isChatInputCommand()) {
       const key = `forbid_${interaction.user.id}`;
       if (!client.spamTracker) client.spamTracker = new Map();
       const count = (client.spamTracker.get(key) || 0) + 1;

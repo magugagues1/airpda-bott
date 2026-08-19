@@ -9,7 +9,7 @@ module.exports = {
   name: 'guildMemberAdd',
   async execute(client, member) {
     // Anti-raid check
-    const isRaid = await checkRaid(member.guild);
+    const isRaid = await checkRaid(member);
     if (isRaid) return;
 
     const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);

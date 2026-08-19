@@ -16,11 +16,31 @@ const E = require('../utils/embeds');
 const config = require('../config');
 const { getPaisNombre } = require('../data/paises');
 const GuildConfig = require('../database/models/GuildConfig');
+const path = require('path');
+
+const MAPA_DIR = path.join(__dirname, '..', 'assets');
 
 async function getPersonaje(discordId, username) {
   const p = await getPlayer(discordId, username);
   if (!p.personajeCreado) return null;
   return p;
+}
+
+let _cv = undefined;
+let _fontsRegistered = false;
+function getCanvasLib() {
+  if (_cv === undefined) _cv = require('@napi-rs/canvas');
+  if (!_fontsRegistered) {
+    _fontsRegistered = true;
+    try {
+      const path = require('path');
+      _cv.GlobalFonts.registerFromPath(path.join(__dirname, '..', 'assets', 'fonts', 'Inter-Regular.ttf'), 'UIFont');
+      _cv.GlobalFonts.registerFromPath(path.join(__dirname, '..', 'assets', 'fonts', 'Inter-Bold.ttf'), 'UIFont');
+    } catch (e) {
+      console.error('[Font]', e.message);
+    }
+  }
+  return _cv;
 }
 
 async function sendRpEmbed(message, embed, deleteOriginal = true) {
@@ -29,12 +49,16 @@ async function sendRpEmbed(message, embed, deleteOriginal = true) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-const RP_CATEGORIES = ['1441818965218431035', '1441818964933214358'];
+const RP_CATEGORIES = ['1441818965218431035', '1441818964933214358', '1481323333445357789', '1441818965444792408'];
+const RP_ALLOWED_CHANNELS = ['1441818964748537989'];
+const RP_STAFF_ROLE = '1441818963133731016';
 const FORBIDDEN_CHANNELS = ['1441818965218431029', '1500230610071982090', '1441818964748537990', '1441818964748537988'];
 
 function canRP(message) {
   if (message.author.permissions?.has('ManageMessages')) return true;
+  if (message.member?.roles.cache.has(RP_STAFF_ROLE)) return true;
   if (FORBIDDEN_CHANNELS.includes(message.channelId)) return false;
+  if (RP_ALLOWED_CHANNELS.includes(message.channelId)) return true;
   if (!message.channel?.parentId) return false;
   return RP_CATEGORIES.includes(message.channel.parentId);
 }
@@ -573,7 +597,7 @@ const prefixCommands = [
 
       const zoneRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('zona_ciudad').setLabel('🏙️ Ciudad').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('zona_gran_ señora').setLabel('🌾 Gran Señora').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('zona_gran_senora').setLabel('🌾 Gran Señora').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('zona_norte').setLabel('🏔️ Norte (Paleto)').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('cancel_911_zona').setLabel('❌ Cancelar').setStyle(ButtonStyle.Danger),
       );
@@ -596,8 +620,8 @@ const prefixCommands = [
         return;
       }
 
-      const zonaNombre = { ciudad: '🏙️ Ciudad', 'gran_ señora': '🌾 Gran Señora', norte: '🏔️ Norte (Paleto)' }[zona] || zona;
-      const mapaFile = { ciudad: './assets/mapa_ciudad.png', 'gran_ señora': './assets/mapa_gran_señora.png', norte: './assets/mapa_norte.png' }[zona] || null;
+      const zonaNombre = { ciudad: '🏙️ Ciudad', gran_senora: '🌾 Gran Señora', norte: '🏔️ Norte (Paleto)' }[zona] || zona;
+      const mapaFile = { ciudad: path.join(MAPA_DIR, 'mapa_ciudad.png'), gran_senora: path.join(MAPA_DIR, 'mapa_gran_señora.png'), norte: path.join(MAPA_DIR, 'mapa_norte.png') }[zona] || null;
 
       // ─── Pedir código postal ────────────────────────────────────────────
       const mapaEmbed = new EmbedBuilder()
@@ -630,7 +654,7 @@ const prefixCommands = [
       // Marcar código postal en el mapa usando Canvas
       if (codigoPostal !== 'No especificado' && mapaFile) {
         try {
-          const cv = require('canvas');
+          const cv = getCanvasLib();
           const img = await cv.loadImage(mapaFile);
           const c = cv.createCanvas(img.width, img.height);
           const ctx = c.getContext('2d');
@@ -644,19 +668,19 @@ const prefixCommands = [
             ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 4; ctx.stroke();
             ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2);
             ctx.fillStyle = '#ff0000'; ctx.fill();
-            ctx.font = 'bold 16px Arial, sans-serif';
+            ctx.font = 'bold 16px UIFont';
             ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
             ctx.fillText(codigoPostal, x, y + 40);
           } else {
             ctx.fillStyle = 'rgba(0,0,0,0.6)';
             ctx.fillRect(10, c.height - 60, c.width - 20, 42);
             ctx.fillStyle = '#ff4444';
-            ctx.font = 'bold 28px Arial, sans-serif';
+            ctx.font = 'bold 28px UIFont';
             ctx.textAlign = 'center';
             ctx.fillText(`CP: ${codigoPostal}`, c.width / 2, c.height - 28);
           }
 
-          mapaAttachment = new AttachmentBuilder(c.toBuffer(), { name: 'mapa.png' });
+          mapaAttachment = new AttachmentBuilder(c.toBuffer('image/png'), { name: 'mapa.png' });
         } catch (e) {
           console.error('[911 Canvas]', e.message);
         }
@@ -752,13 +776,13 @@ const prefixCommands = [
       }
       const zona = args[0].toLowerCase();
       const codigo = args[1];
-      const mapas = { ciudad: './assets/mapa_ciudad.png', gran_señora: './assets/mapa_gran_señora.png', norte: './assets/mapa_norte.png' };
-      const nombres = { ciudad: '🏙️ Ciudad', gran_señora: '🌾 Gran Señora', norte: '🏔️ Norte (Paleto)' };
+      const mapas = { ciudad: path.join(MAPA_DIR, 'mapa_ciudad.png'), gran_senora: path.join(MAPA_DIR, 'mapa_gran_señora.png'), norte: path.join(MAPA_DIR, 'mapa_norte.png') };
+      const nombres = { ciudad: '🏙️ Ciudad', gran_senora: '🌾 Gran Señora', norte: '🏔️ Norte (Paleto)' };
       const mapaFile = mapas[zona];
-      if (!mapaFile) return message.reply('❌ Zona inválida. Usa: ciudad, gran_señora o norte.');
+      if (!mapaFile) return message.reply('❌ Zona inválida. Usa: ciudad, gran_senora o norte.');
 
       try {
-        const cv = require('canvas');
+        const cv = getCanvasLib();
         const { getCoord } = require('../data/codigos_postales');
         const img = await cv.loadImage(mapaFile);
         const c = cv.createCanvas(img.width, img.height);
@@ -773,7 +797,7 @@ const prefixCommands = [
           ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 4; ctx.stroke();
           ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2);
           ctx.fillStyle = '#ff0000'; ctx.fill();
-          ctx.font = 'bold 16px Arial, sans-serif';
+          ctx.font = 'bold 16px UIFont';
           ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
           ctx.fillText(codigo, x, y + 40);
         } else {
@@ -781,7 +805,7 @@ const prefixCommands = [
         }
 
         const { AttachmentBuilder } = require('discord.js');
-        const attach = new AttachmentBuilder(c.toBuffer(), { name: 'mapa.png' });
+        const attach = new AttachmentBuilder(c.toBuffer('image/png'), { name: 'mapa.png' });
         const embed = new EmbedBuilder()
           .setColor(0x3b82f6)
           .setTitle(`📍 ${nombres[zona] || zona} — CP: ${codigo}`)

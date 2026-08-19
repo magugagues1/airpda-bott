@@ -251,6 +251,7 @@ async function handleAntiInsult(message, sec) {
 
 // ─── Anti-Raid de joins ────────────────────────────────────────────────────
 async function checkRaid(member) {
+  if (!member || !member.guild) return false;
   const guild = member.guild;
   const config = await GuildConfig.findOne({ guildId: guild.id });
   if (!config) return false;

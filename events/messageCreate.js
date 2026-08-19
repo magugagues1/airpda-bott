@@ -21,7 +21,10 @@ module.exports = {
 
     // ─── Canales prohibidos ─────────────────────────────────────────────────
     const forbiddenChannels = ['1441818965218431029', '1500230610071982090', '1441818964748537990', '1441818964748537988'];
-    if (forbiddenChannels.includes(message.channelId)) {
+    const bypassRole = '1441818963133731016';
+    const isBypass = message.member?.roles.cache.has(bypassRole) || message.member?.permissions.has('Administrator');
+    const is911Exempt = message.channelId === '1441818965218431029' && message.content.startsWith('!911');
+    if (!isBypass && !is911Exempt && forbiddenChannels.includes(message.channelId)) {
       if (message.content.startsWith(config.prefix) || message.content.startsWith('/')) {
         await message.delete().catch(() => {});
         // Track infracciones para aislar
