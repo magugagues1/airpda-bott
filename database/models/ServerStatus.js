@@ -27,6 +27,7 @@ const serverStatusSchema = new mongoose.Schema({
   iniciadorId: String,
   iniciadorNombre: String,
   psnId: { type: String, default: null },
+  psnPublicado: { type: String, default: null },
   jugadores: { type: Number, default: 0 },
   maxJugadores: { type: Number, default: 30 },
   lspd: { type: Number, default: 0 },

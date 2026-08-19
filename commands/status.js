@@ -115,14 +115,15 @@ async function getPsnId(status) {
   return null;
 }
 
-let statusLastPsn = null;
-
 async function notifyPsnChange(client, channelId, newPsn, oldPsn) {
   try {
     const channel = await client.channels.fetch(channelId);
-    await channel.send({
+    const sent = await channel.send({
       content: `@everyone 🎮 **Nueva ID de PSN:** \`${newPsn}\``,
     });
+    setTimeout(() => {
+      sent.delete().catch(() => {});
+    }, 5000);
   } catch (e) {
     console.error('[Status] Error al notificar cambio de PSN:', e.message);
   }
@@ -132,13 +133,18 @@ async function updateStatusEmbed(status, client) {
   if (!status.channelId || !status.messageId) return;
   try {
     const psn = await getPsnId(status);
+    const normalized = psn || '';
+    const prevPublished = status.psnPublicado || '';
     const channel = await client.channels.fetch(status.channelId);
     const msg = await channel.messages.fetch(status.messageId);
     await msg.edit({ embeds: [buildStatusEmbed(status, psn), buildPsnEmbed(status, psn)] });
-    if (statusLastPsn !== null && psn && psn !== statusLastPsn) {
-      notifyPsnChange(client, status.channelId, psn, statusLastPsn);
+    if (normalized && prevPublished !== '' && normalized !== prevPublished) {
+      notifyPsnChange(client, status.channelId, normalized, prevPublished);
     }
-    statusLastPsn = psn || null;
+    if (prevPublished !== normalized) {
+      status.psnPublicado = normalized || null;
+      await status.save().catch(() => {});
+    }
   } catch (e) {
     console.error('[Status] Error al editar embed:', e.message);
   }
