@@ -52,6 +52,8 @@ client.prefixCmds  = new Collection(); // prefix commands { name -> {name, alias
     loadCommands(client);
     loadEvents(client);
     await client.login(config.token);
+    const { startStatusSync } = require('./commands/status');
+    startStatusSync(client);
   } catch (err) {
     console.error('❌ Error al iniciar el bot:', err);
     process.exit(1);

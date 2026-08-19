@@ -438,18 +438,21 @@ async function execute(interaction, client) {
 
     const embed = new EmbedBuilder()
       .setColor(0x1a1a2e)
-      .setTitle(`🔍 Cacheo — ${ciudadano.getFullName()}`)
+      .setTitle('🔍 Cacheo Policial')
+      .setAuthor({ name: ciudadano.getFullName(), iconURL: target.displayAvatarURL({ dynamic: true }) })
+      .setThumbnail(BANNERS.cachear)
       .setDescription(
         inventario?.items?.length
-          ? inventario.items.map(i => `${i.emoji || '📦'} **${i.nombre}** x${i.cantidad}${i.tipo === 'arma' ? ' ⚠️ ARMA' : i.tipo === 'droga' ? ' 🚨 DROGA' : ''}`).join('\n')
+          ? inventario.items.map(i => `${i.emoji || '📦'} **${i.nombre}** x${i.cantidad}${i.tipo === 'arma' ? ' ⚠️ **ARMA**' : i.tipo === 'droga' ? ' 🚨 **DROGA**' : ''}`).join('\n')
           : '*Inventario vacío*',
       )
       .addFields(
         { name: '💵 Cash visible', value: formatMoney(ciudadano.cash), inline: true },
-        { name: '🚨 Buscado', value: ciudadano.buscado ? '⚠️ SÍ' : '✅ No', inline: true },
-        { name: '⛓️ Esposado', value: ciudadano.esposado ? '⛓️ SÍ' : '✅ No', inline: true },
+        { name: '🚨 Buscado',      value: ciudadano.buscado ? '⚠️ SÍ' : '✅ No', inline: true },
+        { name: '⛓️ Esposado',     value: ciudadano.esposado ? '⛓️ SÍ' : '✅ No', inline: true },
+        { name: '🎒 Items',        value: `${inventario?.items?.length || 0} tipos`, inline: true },
       )
-      .setFooter({ text: `Cacheado por ${interaction.user.username}` })
+      .setFooter({ text: `Cacheado por ${interaction.user.username}  ·  AmericanRP` })
       .setTimestamp();
 
     return interaction.editReply({ embeds: [embed] });
@@ -874,9 +877,23 @@ const prefixCommands = [
       const ciudadano = await getPlayer(target.id, target.username);
       const inv       = require('../database/models/Inventory');
       const inventario = await inv.findOne({ discordId: target.id });
-      const items = inventario?.items?.length ? inventario.items.map(i => `${i.emoji || '📦'} ${i.nombre} x${i.cantidad}`).join('\n') : '*Vacío*';
-      await message.reply({ embeds: [new EmbedBuilder().setColor(0x1a1a2e).setTitle(`🔍 Cacheo — ${ciudadano.getFullName()}`).setDescription(items)
-        .addFields({ name: '🚨 Buscado', value: ciudadano.buscado ? 'SÍ' : 'No', inline: true }).setTimestamp()] });
+      const items = inventario?.items?.length ? inventario.items.map(i => `${i.emoji || '📦'} **${i.nombre}** x${i.cantidad}${i.tipo === 'arma' ? ' ⚠️ **ARMA**' : i.tipo === 'droga' ? ' 🚨 **DROGA**' : ''}`).join('\n') : '*Inventario vacío*';
+      await message.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(0x1a1a2e)
+          .setTitle('🔍 Cacheo Policial')
+          .setAuthor({ name: ciudadano.getFullName(), iconURL: target.displayAvatarURL({ dynamic: true }) })
+          .setThumbnail(BANNERS.cachear)
+          .setDescription(items)
+          .addFields(
+            { name: '💵 Cash visible', value: formatMoney(ciudadano.cash), inline: true },
+            { name: '🚨 Buscado', value: ciudadano.buscado ? '⚠️ SÍ' : '✅ No', inline: true },
+            { name: '⛓️ Esposado', value: ciudadano.esposado ? '⛓️ SÍ' : '✅ No', inline: true },
+            { name: '🎒 Items', value: `${inventario?.items?.length || 0} tipos`, inline: true },
+          )
+          .setFooter({ text: `Cacheado por ${message.author.username}  ·  AmericanRP` })
+          .setTimestamp()],
+      });
     },
   },
   {

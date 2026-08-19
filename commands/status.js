@@ -10,17 +10,18 @@ const MAX_JUGADORES = 30;
 
 const STAFF_IDS = ['1441818963133731016'];
 
-function buildStatusEmbed(status) {
+function buildStatusEmbed(status, psnId = null) {
   const state = status.isOnline ? 'ONLINE' : 'OFFLINE';
   const emoji = status.isOnline ? '🟢' : '🔴';
   const color = status.isOnline ? config.colors.success : config.colors.danger;
+  const psn = psnId || status.psnId || '---';
 
   const desc = [
     `**Server Status**`,
     `${emoji} **${state}**`,
     ``,
     `🌴 **ID PSN:**`,
-    `\`${status.psnId || '---'}\``,
+    `\`${psn}\``,
     ``,
     `👥 **Jugadores**`,
     `\`${status.jugadores}/${status.maxJugadores || MAX_JUGADORES}\``,
@@ -52,6 +53,15 @@ function buildStatusEmbed(status) {
     .setDescription(desc.join('\n'))
     .setImage(STATUS_IMG_URL + '/' + (status.isOnline ? 'status-on.png' : 'status-off.png'))
     .setFooter({ text: `AmericanRP • ${new Date().toLocaleString('es-ES')}` })
+    .setTimestamp();
+}
+
+function buildPsnEmbed(status, psnId = null) {
+  const psn = psnId || status.psnId || '---';
+  return new EmbedBuilder()
+    .setColor(config.colors.success)
+    .setDescription(`# 🌴 **ID PSN**\n\n\`${psn}\``)
+    .setFooter({ text: 'AmericanRP · Roleplay' })
     .setTimestamp();
 }
 
@@ -87,15 +97,78 @@ async function getOrCreateStatus() {
   return status;
 }
 
+// Resolver el ID PSN: prioridad al guardado en ServerStatus (bot o web)
+// y fallback al PSN del staff que abrió el server (User.psnId, editado desde la web)
+async function getPsnId(status) {
+  if (status.psnId) return status.psnId;
+  try {
+    const { User } = require('../database/models/PdaModels');
+    if (status.iniciadorId) {
+      const u = await User.findOne({ discordId: status.iniciadorId }).lean();
+      if (u?.psnId) {
+        status.psnId = u.psnId;
+        await status.save().catch(() => {});
+        return u.psnId;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+let statusLastPsn = null;
+
+async function notifyPsnChange(client, channelId, newPsn, oldPsn) {
+  try {
+    const channel = await client.channels.fetch(channelId);
+    await channel.send({
+      content: `@everyone 🎮 **Nueva ID de PSN:** \`${newPsn}\``,
+    });
+  } catch (e) {
+    console.error('[Status] Error al notificar cambio de PSN:', e.message);
+  }
+}
+
 async function updateStatusEmbed(status, client) {
   if (!status.channelId || !status.messageId) return;
   try {
+    const psn = await getPsnId(status);
     const channel = await client.channels.fetch(status.channelId);
     const msg = await channel.messages.fetch(status.messageId);
-    await msg.edit({ embeds: [buildStatusEmbed(status)] });
+    await msg.edit({ embeds: [buildStatusEmbed(status, psn), buildPsnEmbed(status, psn)] });
+    if (statusLastPsn !== null && psn && psn !== statusLastPsn) {
+      notifyPsnChange(client, status.channelId, psn, statusLastPsn);
+    }
+    statusLastPsn = psn || null;
   } catch (e) {
     console.error('[Status] Error al editar embed:', e.message);
   }
+}
+
+// ── Sync desde web ────────────────────────────────────────────────────────────
+// La web y el bot comparten MongoDB. Este poller refresca el embed en Discord
+// automáticamente cuando la web cambia el estado, jugadores o el ID PSN.
+let statusLastSnapshot = null;
+
+function statusSnapshot(status, psn) {
+  return [status.isOnline, psn || '', status.jugadores || 0, status.maxJugadores || MAX_JUGADORES,
+    status.lspd || 0, status.lscsd || 0, status.lscfd || 0, status.mecanicos || 0, status.staffIc || 0].join('|');
+}
+
+function startStatusSync(client, intervalMs = 15000) {
+  statusLastSnapshot = null;
+  setInterval(async () => {
+    try {
+      const status = await getOrCreateStatus();
+      if (!status.channelId || !status.messageId) return;
+      const psn = await getPsnId(status);
+      const snap = statusSnapshot(status, psn);
+      if (snap === statusLastSnapshot) return;
+      statusLastSnapshot = snap;
+      await updateStatusEmbed(status, client);
+    } catch (e) {
+      console.error('[Status Sync]', e.message);
+    }
+  }, intervalMs);
 }
 
 async function sendLogToChannel(client, log) {
@@ -310,20 +383,21 @@ module.exports = {
         return interaction.editReply({ content: `❌ Canal <#${channelId}> no encontrado. Verifica que el ID sea correcto y que el bot tenga acceso.` });
       }
 
-      const embed = buildStatusEmbed(status);
+      const psn = await getPsnId(status);
+      const embeds = [buildStatusEmbed(status, psn), buildPsnEmbed(status, psn)];
 
       if (status.channelId && status.messageId) {
         try {
           const oldChannel = await client.channels.fetch(status.channelId);
           const oldMsg = await oldChannel.messages.fetch(status.messageId);
-          await oldMsg.edit({ embeds: [embed] });
+          await oldMsg.edit({ embeds });
         } catch {
-          const msg = await channel.send({ embeds: [embed] });
+          const msg = await channel.send({ embeds });
           status.channelId = channel.id;
           status.messageId = msg.id;
         }
       } else {
-        const msg = await channel.send({ embeds: [embed] });
+        const msg = await channel.send({ embeds });
         status.channelId = channel.id;
         status.messageId = msg.id;
       }
@@ -359,4 +433,6 @@ module.exports = {
     if (action === 'sv_pico' || target === 'pico') return handlePico(interaction);
     return handleStatusCore(interaction, client);
   },
+
+  startStatusSync,
 };

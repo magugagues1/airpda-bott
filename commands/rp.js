@@ -89,7 +89,7 @@ async function checkVitals(message) {
   } catch { return true; }
 }
 
-async function drainVitals(message, costoHambre = 1, costoSed = 1) {
+async function drainVitals(message, costoHambre = 0.5, costoSed = 0.5) {
   try {
     const { getPlayer } = require('../utils/helpers');
     const p = await getPlayer(message.author.id, message.author.username);
@@ -237,8 +237,9 @@ const prefixCommands = [
       if (!args.length) return message.reply('Uso: `!ooc [texto]`');
       const embed = new EmbedBuilder()
         .setColor(0x6b7280)
-        .setDescription(`(( ${args.join(' ')} ))`)
-        .setAuthor({ name: `OOC | ${message.author.tag}`, iconURL: message.author.displayAvatarURL() })
+        .setAuthor({ name: `💬 OOC · ${message.author.username}`, iconURL: message.author.displayAvatarURL() })
+        .setDescription(`**((** ${args.join(' ')} **))**`)
+        .setFooter({ text: 'Fuera de personaje  ·  AmericanRP' })
         .setTimestamp();
       await sendRpEmbed(message, embed);
     },

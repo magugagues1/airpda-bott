@@ -47,13 +47,17 @@ const E = {
   // ── RP: !me — Acción del personaje ───────────────────────────────────────
   meEmbed: (player, texto, avatarUrl = null) => {
     const em = new EmbedBuilder()
-      .setColor(0x1e1e2e)
-      .setDescription(`> 🎭 *${texto}*`)
-      .setAuthor({ name: `▸ ${player.getFullName()}`, iconURL: avatarUrl || undefined })
-      .setThumbnail(avatarUrl || ICONS.rp_me)
-      .setFooter({ text: 'Acción  ·  AmericanRP RP' })
+      .setColor(0x5865f2)
+      .setAuthor({ name: `${player.getFullName()}`, iconURL: avatarUrl || undefined })
+      .setTitle('🎭 Acción RP')
+      .setDescription(`> *${texto}*`)
+      .addFields(
+        { name: '🪪 ID', value: `\`${getDNI(player.discordId)}\``,  inline: true },
+        { name: '🧩 Tipo', value: 'Acción',                        inline: true },
+      )
+      .setThumbnail(ICONS.rp_me)
+      .setFooter({ text: 'AmericanRP · Roleplay' })
       .setTimestamp();
-    addImage(em, 'me');
     return em;
   },
 
@@ -61,12 +65,16 @@ const E = {
   doEmbed: (player, texto, avatarUrl = null) => {
     const em = new EmbedBuilder()
       .setColor(0x1e3a5f)
-      .setDescription(`> 📋 *${texto}*`)
-      .setAuthor({ name: `▸ ${player.getFullName()}`, iconURL: avatarUrl || undefined })
-      .setThumbnail(avatarUrl || ICONS.rp_do)
-      .setFooter({ text: 'Descripción  ·  AmericanRP RP' })
+      .setAuthor({ name: `${player.getFullName()}`, iconURL: avatarUrl || undefined })
+      .setTitle('📋 Descripción de escena')
+      .setDescription(`> *${texto}*`)
+      .addFields(
+        { name: '🪪 ID', value: `\`${getDNI(player.discordId)}\``,  inline: true },
+        { name: '🧩 Tipo', value: 'Escena',                         inline: true },
+      )
+      .setThumbnail(ICONS.rp_do)
+      .setFooter({ text: 'AmericanRP · Roleplay' })
       .setTimestamp();
-    addImage(em, 'do');
     return em;
   },
 
@@ -174,14 +182,36 @@ const E = {
 
   // ── Inventario ────────────────────────────────────────────────────────────
   inventario: (inv, nombre) => {
-    const items = inv.items.length === 0
-      ? '*Inventario vacío*'
-      : inv.items.map(i => `${i.emoji || '📦'} **${i.nombre}** x${i.cantidad}${i.equipado ? ' _(equipado)_' : ''}`).join('\n');
+    const etiquetas = {
+      comida: '🍔 Comida',
+      bebida: '🥤 Bebida',
+      arma: '🔫 Armas',
+      droga: '🌿 Drogas',
+      medicina: '💊 Medicina',
+      equipo: '🧥 Equipo',
+      documento: '🪪 Documentos',
+      ilegal: '🚫 Mercado negro',
+    };
+    const grupos = {};
+    for (const i of inv.items) {
+      const k = etiquetas[i.tipo] ? i.tipo : 'otros';
+      (grupos[k] ??= []).push(i);
+    }
+    const secciones = Object.entries(grupos).map(([tipo, arr]) => {
+      const label = tipo === 'otros' ? '📦 Otros' : etiquetas[tipo];
+      return `**${label}**\n${arr.map(i => `${i.emoji || '📦'} **${i.nombre}** x${i.cantidad}${i.equipado ? ' _(equipado)_' : ''}`).join('\n')}`;
+    }).join('\n\n');
+
     return new EmbedBuilder()
       .setColor(config.colors.purple)
-      .setTitle(`🎒 Inventario de ${nombre}`)
-      .setDescription(items)
-      .addFields({ name: 'Capacidad', value: `${inv.countItems()}/${inv.capacidadMax} slots`, inline: true })
+      .setAuthor({ name: `🎒 Inventario de ${nombre}` })
+      .setDescription(secciones || '*Inventario vacío*')
+      .addFields(
+        { name: '📦 Slots', value: `${inv.countItems()}/${inv.capacidadMax}`, inline: true },
+        { name: '⚖️ Peso', value: `${inv.peso || 0}/${inv.pesoMax} kg`,         inline: true },
+      )
+      .setThumbnail(ICONS.inventario)
+      .setFooter({ text: 'AmericanRP · Inventario' })
       .setTimestamp();
   },
 

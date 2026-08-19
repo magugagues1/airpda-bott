@@ -77,6 +77,7 @@ const CATEGORIAS = [
       { cmd: '/tirar [item] [cant]',         desc: 'Tirar un item al suelo' },
       { cmd: '/dar-item [@u] [item] [cant]', desc: 'Dar un item de tu mochila a otro jugador' },
       { cmd: '/dar [@u] [item]',             desc: 'Dar dinero o items a otro jugador' },
+      { cmd: '!inv',                         desc: 'Ver tu inventario (en otro jugador solo admin)' },
     ],
   },
   {
@@ -306,6 +307,7 @@ const CATEGORIAS = [
       { cmd: '/clear [cantidad]',         desc: 'Borrar X mensajes del canal' },
       { cmd: '/status-on',                desc: 'Activar estado del servidor (embed con botones)' },
       { cmd: '/status-off',               desc: 'Cerrar estado del servidor' },
+      { cmd: '!ver [@u]',                 desc: '(Admin) Ficha completa: economía, inventario, vehículos y estado' },
     ],
   },
 ];

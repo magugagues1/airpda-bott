@@ -10,6 +10,11 @@ const { resolveEmoji } = require('../config/itemEmojis');
 const E = require('../utils/embeds');
 const config = require('../config');
 
+const ADMIN_ROLE_ID = '1441818963133731016';
+function isAdminInv(member) {
+  return member?.permissions?.has('Administrator') || member?.roles?.cache?.has(ADMIN_ROLE_ID) || false;
+}
+
 const data = [
   new SlashCommandBuilder()
     .setName('inventario')
@@ -74,23 +79,33 @@ async function execute(interaction, client) {
 
   if (cmd === 'inventario') {
     const target = interaction.options.getUser('usuario');
-    // Solo admin puede ver inventario ajeno
-    if (target && target.id !== interaction.user.id) {
-      if (!interaction.member.permissions.has('Administrator')) {
-        return interaction.reply({ embeds: [E.err('Sin permiso', 'Solo los admins pueden ver el inventario de otros.')], ephemeral: true });
-      }
+    const viewingOther = target && target.id !== interaction.user.id;
+    if (viewingOther && !isAdminInv(interaction.member)) {
+      return interaction.reply({ embeds: [E.err('Sin permiso', 'Solo los admins pueden ver el inventario de otros.')], ephemeral: true });
     }
     const uid = target?.id || interaction.user.id;
     const nombre = target?.username || interaction.user.username;
     const inv = await getInventory(uid);
 
     const { attachment, url } = await buildInventoryAttachment(inv);
+    const embed = E.inventario(inv, nombre);
 
-    if (attachment && url) {
-      const embed = E.inventario(inv, nombre).setImage(url);
-      return interaction.reply({ embeds: [embed], files: [attachment] });
+    if (viewingOther) {
+      const p = await getPlayer(uid, nombre);
+      if (p?.personajeCreado) {
+        embed.addFields(
+          { name: '👤 Personaje',  value: p.getFullName(),                    inline: true },
+          { name: '💵 Cash',       value: formatMoney(p.cash),                 inline: true },
+          { name: '🏦 Banco',      value: formatMoney(p.bank),                 inline: true },
+          { name: '🧹 Sucio',      value: formatMoney(p.dineroSucio),          inline: true },
+          { name: '💰 Ahorros',    value: formatMoney(p.bankAhorros || 0),     inline: true },
+          { name: '💎 Patrimonio', value: formatMoney(p.cash + p.bank + (p.bankAhorros || 0)), inline: true },
+        );
+      }
     }
-    return interaction.reply({ embeds: [E.inventario(inv, nombre)] });
+
+    if (url) embed.setImage(url);
+    return interaction.reply({ embeds: [embed], files: attachment ? [attachment] : [] });
   }
 
   if (cmd === 'equipar') {
@@ -297,14 +312,77 @@ const prefixCommands = [
     description: 'Ver tu inventario',
     async run(message, args) {
       const target = message.mentions.users.first() || message.author;
+      if (target.id !== message.author.id && !isAdminInv(message.member)) {
+        return message.reply('❌ Solo los admins pueden ver el inventario de otros jugadores.\nUsa `!inv` para ver el tuyo o `!ver @usuario` (admin).');
+      }
       const inv = await getInventory(target.id);
 
       const { attachment, url } = await buildInventoryAttachment(inv);
-      if (attachment && url) {
-        const embed = E.inventario(inv, target.username).setImage(url);
-        return message.reply({ embeds: [embed], files: [attachment] });
+      const embed = E.inventario(inv, target.username);
+      if (target.id !== message.author.id) {
+        const p = await getPlayer(target.id, target.username);
+        if (p?.personajeCreado) {
+          embed.addFields(
+            { name: '👤 Personaje', value: p.getFullName(),     inline: true },
+            { name: '💵 Cash',      value: formatMoney(p.cash), inline: true },
+            { name: '🏦 Banco',     value: formatMoney(p.bank), inline: true },
+          );
+        }
       }
-      return message.reply({ embeds: [E.inventario(inv, target.username)] });
+      if (url) embed.setImage(url);
+      return message.reply({ embeds: [embed], files: attachment ? [attachment] : [] });
+    },
+  },
+
+  {
+    name: 'ver',
+    aliases: ['adminver', 'ficha-admin', 'fv'],
+    description: '!ver [@usuario] — [ADMIN] Ver economía, inventario, vehículos y todo de un jugador',
+    async run(message, args) {
+      if (!isAdminInv(message.member)) return message.reply('❌ Solo los admins pueden usar `!ver`.');
+      const target = message.mentions.users.first() || message.author;
+      const p  = await getPlayer(target.id, target.username);
+      const inv = await getInventory(target.id);
+      const dni = E.getDNI(target.id);
+
+      const vehiculos = (p.vehicles || p.vehiculos || []).length === 0
+        ? '*Ninguno*'
+        : (p.vehicles || p.vehiculos || []).map(v => `🚗 **${v.nombre || v.modelo || 'Vehículo'}**${v.matricula ? ` — \`${v.matricula}\`` : ''}${v.estado === 'secuestrado' ? ' ⚠️' : ''}`).join('\n');
+
+      const estados = [
+        p.muerto ? '💀 Muerto' : null,
+        p.enHospital ? '🏥 Hospital' : null,
+        p.enCarcel ? '⛓️ En cárcel' : null,
+        p.esposado ? '⛓️ Esposado' : null,
+        p.buscado ? '🚨 Buscado' : null,
+        p.peligroso ? '⚠️ Peligroso' : null,
+      ].filter(Boolean).join(', ') || '✅ Libre';
+
+      const embed = new EmbedBuilder()
+        .setColor(config.colors.dark)
+        .setTitle(`🕵️ Ficha completa — ${p.personajeCreado ? p.getFullName() : target.username}`)
+        .setThumbnail(target.displayAvatarURL({ dynamic: true }))
+        .addFields(
+          { name: '👤 Usuario',      value: `<@${target.id}>`,                                        inline: true },
+          { name: '🪪 DNI',          value: `\`${dni}\``,                                              inline: true },
+          { name: '💼 Trabajo',      value: p.trabajo || 'Desempleado',                                inline: true },
+          { name: '💵 Cash',         value: formatMoney(p.cash),                                       inline: true },
+          { name: '🏦 Banco',        value: formatMoney(p.bank),                                       inline: true },
+          { name: '💰 Ahorros',      value: formatMoney(p.bankAhorros || 0),                           inline: true },
+          { name: '🧹 Dinero sucio', value: formatMoney(p.dineroSucio),                                inline: true },
+          { name: '💎 Patrimonio',   value: formatMoney(p.cash + p.bank + (p.bankAhorros || 0)),       inline: true },
+          { name: '❤️ Vitales',     value: `${E.barraVida(p.salud)} ${Math.floor(p.salud)}%\n${E.barraVida(p.hambre)} hambre · ${E.barraVida(p.sed)} sed`, inline: true },
+          { name: '⭐ Nivel',        value: `Nv. ${p.nivel} (${p.xp}/${p.xpSiguienteNivel} XP)`,        inline: true },
+          { name: '📋 Estado',       value: estados,                                                    inline: false },
+          { name: '🎒 Inventario',   value: inv.items.length
+            ? inv.items.map(i => `${i.emoji || '📦'} **${i.nombre}** x${i.cantidad}${i.equipado ? ' _(equipado)_' : ''}`).join('\n')
+            : '*Inventario vacío*', inline: false },
+          { name: '🚗 Vehículos',    value: vehiculos,                                                  inline: false },
+        )
+        .setFooter({ text: `Consultado por ${message.author.username}  ·  AmericanRP Admin` })
+        .setTimestamp();
+
+      return message.reply({ embeds: [embed] });
     },
   },
 
