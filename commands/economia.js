@@ -656,6 +656,28 @@ const prefixCommands = [
     },
   },
   {
+    name: 'depositar',
+    aliases: ['ingresar', 'depo'],
+    description: 'Depositar cash en el banco',
+    async run(message, args) {
+      const player = await getPlayer(message.author.id, message.author.username);
+      if (!player.personajeCreado) return message.reply('Sin personaje. Usa `/personaje crear`.');
+      const cant = parseInt(args[0], 10);
+      if (!Number.isInteger(cant) || cant < 1) return message.reply('❌ Uso: `!depositar <cantidad> [pin]`\nEj: `!depositar 500` o `!depositar 500 1234`');
+      if (player.pinBanco) {
+        const pin = (args[1] || '').trim();
+        if (!pin) return message.reply('🔒 Tu cuenta tiene PIN. Pásalo así: `!depositar <cantidad> <pin>`');
+        const { ok: pinOk } = await verifyPin(pin, player.pinBanco);
+        if (!pinOk) return message.reply('❌ PIN incorrecto.');
+      }
+      if (cant > player.cash) return message.reply(`❌ Solo tienes ${formatMoney(player.cash)} en efectivo.`);
+      player.cash -= cant;
+      player.bank += cant;
+      await player.save();
+      return message.reply(`🏦 Depositaste **${formatMoney(cant)}** en el banco.\n🏦 Banco: **${formatMoney(player.bank)}** · 💵 Cash: ${formatMoney(player.cash)}`);
+    },
+  },
+  {
     name: 'cobrar',
     aliases: ['salario', 'trabajo', 'sueldo'],
     cooldown: config.cooldowns.cobrar,
