@@ -60,7 +60,7 @@ function buildPsnEmbed(status, psnId = null) {
   const psn = psnId || status.psnId || '---';
   return new EmbedBuilder()
     .setColor(config.colors.success)
-    .setDescription(`# 🌴 **ID PSN**\n\n\`${psn}\``)
+    .setDescription(`# 🌴 **ID PSN:** ${psn}`)
     .setFooter({ text: 'AmericanRP · Roleplay' })
     .setTimestamp();
 }
