@@ -35,6 +35,13 @@ async function registrarAtracoDeBanda(player, client) {
     const gang = await Gang.findById(player.gangId);
     if (!gang) return null;
     gang.atracos = (gang.atracos || 0) + 1;
+    const miembro = (gang.miembros || []).find(m => m && m.discordId === String(player.discordId));
+    if (miembro) {
+      miembro.contribucion = (miembro.contribucion || 0) + 1;
+    } else {
+      gang.miembros = gang.miembros || [];
+      gang.miembros.push({ discordId: String(player.discordId), rango: player.gangRango || 'Recluta', contribucion: 1, unidoEn: new Date() });
+    }
     const required = (gang.nivel || 1) * 10;
     let subio = false;
     if (gang.atracos >= required) {
