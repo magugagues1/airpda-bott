@@ -21,8 +21,20 @@ const gangSchema = new mongoose.Schema({
   tag:    { type: String, required: true, unique: true, maxlength: 5, uppercase: true },
   descripcion: { type: String, default: '' },
   lider: { type: String, required: true },     // discordId
-  color: { type: Number, default: 0xa78bfa },  // color hex para embeds
+  color: { type: mongoose.Schema.Types.Mixed, default: '#8b5cf6' },  // color hex (#rrggbb) para embeds
   emoji: { type: String, default: '⚔️' },
+
+  // Campos compartidos con la web/staff (misma colección 'gangs')
+  jefeRolId: { type: String, default: null },        // rol "Jefe NOMBRE" en Discord
+  capitalInicial: { type: Number, default: 1500000 }, // capital inicial de la org (1.5M)
+  desmantelada: { type: Boolean, default: false },
+  desmanteladaEn: { type: Date, default: null },
+  motivoDesmantelada: { type: String, default: null },
+  logo: { type: String, default: '' },
+  lore: { type: String, default: '' },
+  ubicacion: { type: String, default: '' },
+  fundador: { type: String, default: null },
+  fechaFundacion: { type: Date, default: null },
 
   miembros: [miembroSchema],
   territorios: [territorioSchema],
@@ -51,7 +63,7 @@ const gangSchema = new mongoose.Schema({
 
   invitaciones: [String],  // discordIds invitados pendientes
   creadoEn: { type: Date, default: Date.now },
-});
+}, { strict: false });
 
 gangSchema.methods.getMiembro = function(discordId) {
   return this.miembros.find(m => m.discordId === discordId) || null;

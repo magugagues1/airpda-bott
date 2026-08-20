@@ -205,6 +205,38 @@ const ckSchema = new mongoose.Schema({
   fecha:             { type: Date, default: Date.now },
 }, { collection: 'cks', strict: false });
 
+// ─── GangAlmacen (org warehouse, shared with web/staff) ──────────────────────
+const gangAlmacenSchema = new mongoose.Schema({
+  gangId: { type: String, required: true, index: true },
+  nombre: { type: String, default: 'Almacén' },
+  capacidad: { type: Number, default: 150 },
+  items: [{
+    id: String,
+    nombre: String,
+    cantidad: { type: Number, default: 1, min: 0 },
+    emoji: { type: String, default: '📦' },
+    tipo: String,
+    precio: Number,
+    descripcion: String,
+    metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
+  }],
+  creadoEn: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+}, { collection: 'gangalmacenes', strict: false });
+
+// ─── GangVehicle (org vehicles, shared with web/staff) ───────────────────────
+const gangVehicleSchema = new mongoose.Schema({
+  gangId: { type: String, required: true, index: true },
+  placa: { type: String, required: true, uppercase: true },
+  nombre: String,
+  modelo: String,
+  color: { type: String, default: 'Negro' },
+  estado: { type: Number, default: 100 },
+  asignadoA: { type: String, default: null },
+  creadoPor: String,
+  creadoEn: { type: Date, default: Date.now },
+}, { collection: 'gangvehiculos', strict: false });
+
 // ─── Exportar (evitar OverwriteModelError en hot-reload) ─────────────────────
 function m(name, schema) {
   return mongoose.models[name] || mongoose.model(name, schema);
@@ -223,4 +255,6 @@ module.exports = {
   Casa:             m('Casa',             casaSchema),
   InformePaciente:  m('InformePaciente',  informePacienteSchema),
   InformePersonal:  m('InformePersonal',  informePersonalSchema),
+  GangAlmacen:      m('GangAlmacen',      gangAlmacenSchema),
+  GangVehicle:      m('GangVehicle',      gangVehicleSchema),
 };

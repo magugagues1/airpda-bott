@@ -61,7 +61,20 @@ module.exports = {
     const cmdName = args.shift().toLowerCase();
 
     const cmd = client.prefixCmds.get(cmdName);
-    if (!cmd) return;
+    if (!cmd) {
+      // Comandos dinámicos: !almacen-NOMBRE (staff)
+      if (cmdName.startsWith('almacen-') && cmdName.length > 'almacen-'.length) {
+        const nombre = cmdName.slice('almacen-'.length).replace(/-/g, ' ');
+        try {
+          const orgModule = require('../commands/org');
+          await orgModule.almAlmacenPorNombre(message, nombre, client);
+        } catch (err) {
+          console.error('[Prefix/almacen-*]', err);
+          message.reply('❌ Ocurrió un error al cargar el almacén.').catch(() => {});
+        }
+      }
+      return;
+    }
 
     try {
       await cmd.run(message, args, client);

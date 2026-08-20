@@ -64,7 +64,32 @@ async function execute(interaction, client) {
       color,
       lider: interaction.user.id,
       miembros: [{ discordId: interaction.user.id, rango: 'Líder', unidoEn: new Date() }],
+      dinero: 1500000,
+      capitalInicial: 1500000,
+      desmantelada: false,
     });
+
+    // Roles de Discord: rol normal + rol "Jefe NOMBRE"
+    try {
+      if (interaction.guild) {
+        const colorInt = parseInt(String(color).replace('#', ''), 16) || config.colors.gang;
+        const rolNormal = await interaction.guild.roles.create({
+          name: `${nombre}`.slice(0, 100),
+          color: colorInt,
+          reason: `Rol de organización ${nombre} (${tag})`,
+        }).catch(() => null);
+        const rolJefe = await interaction.guild.roles.create({
+          name: `Jefe ${nombre}`.slice(0, 100),
+          color: colorInt,
+          reason: `Rol de jefe de ${nombre} (${tag})`,
+        }).catch(() => null);
+        gang.rolId = rolNormal?.id || null;
+        gang.jefeRolId = rolJefe?.id || null;
+        if (rolNormal) await interaction.member.roles.add(rolNormal.id).catch(() => {});
+        if (rolJefe) await interaction.member.roles.add(rolJefe.id).catch(() => {});
+        await gang.save();
+      }
+    } catch {}
 
     player.gangId = gang._id;
     player.gangRango = 'Líder';
