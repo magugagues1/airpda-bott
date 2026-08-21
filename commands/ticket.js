@@ -3,7 +3,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const {
   ticketAddUser, ticketRemoveUser, ticketRename,
-  ticketClose, ticketTranscript, sendTicketPanel,
+  ticketClose, ticketTranscript, sendTicketPanel, fixExistingTicketsPermissions, TICKET_VIEWER_ROLE_ID,
 } = require('../systems/tickets/ticketSystem');
 
 const data = new SlashCommandBuilder()
@@ -18,7 +18,8 @@ const data = new SlashCommandBuilder()
     .addStringOption(o => o.setName('nombre').setDescription('Nuevo nombre').setRequired(true).setMaxLength(90)))
   .addSubcommand(s => s.setName('close').setDescription('Cerrar el ticket actual')
     .addStringOption(o => o.setName('motivo').setDescription('Motivo del cierre').setRequired(false).setMaxLength(300)))
-  .addSubcommand(s => s.setName('transcript').setDescription('Generar transcripción del ticket actual'));
+  .addSubcommand(s => s.setName('transcript').setDescription('Generar transcripción del ticket actual'))
+  .addSubcommand(s => s.setName('sync').setDescription(`Sincroniza permisos de tickets abiertos para el rol <@&${TICKET_VIEWER_ROLE_ID}>`));
 
 async function execute(interaction, client) {
   const sub = interaction.options.getSubcommand();
@@ -40,6 +41,15 @@ async function execute(interaction, client) {
   if (sub === 'rename') return ticketRename(interaction);
   if (sub === 'close') return ticketClose(interaction, client);
   if (sub === 'transcript') return ticketTranscript(interaction, client);
+  if (sub === 'sync') {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels) && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: '❌ Necesitas permiso `Gestionar Canales` o `Administrador` para usar esto.', ephemeral: true });
+    }
+    await interaction.deferReply({ ephemeral: true });
+    const results = await fixExistingTicketsPermissions(client);
+    const out = results.length ? results.join('\n').substring(0, 1900) : '✅ No hubo cambios necesarios. Todos los tickets ya tenían el permiso.';
+    return interaction.editReply({ content: `**Sincronización completada para <@&${TICKET_VIEWER_ROLE_ID}>:**\n\`\`\`\n${out}\n\`\`\`` });
+  }
 }
 
 module.exports = { data, execute };

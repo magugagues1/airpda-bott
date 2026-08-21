@@ -21,6 +21,9 @@ const COLORS = {
   MUTED:    0x95A5A6,
 };
 
+// Rol que SIEMPRE puede ver todos los tickets (sin importar config)
+const TICKET_VIEWER_ROLE_ID = '1441818963133731017';
+
 const TICKET_CATEGORIES = {
   soporte:    { label: 'Soporte',    emoji: '🔧', color: 0x3498DB },
   reporte:    { label: 'Reporte',    emoji: '🚨', color: 0xFF4444 },
@@ -172,9 +175,31 @@ async function handleTicketCreate(interaction, client) {
   const channelName = `${catInfo.emoji}・${category}-${user.username}`
     .toLowerCase().replace(/\s+/g, '-').substring(0, 100);
 
-  // Filtrar roles de staff válidos (pueden haber sido eliminados)
-  const validStaffRoles = (config.tickets?.staffRoles ?? [])
-    .filter(id => guild.roles.cache.has(id));
+  // Filtrar roles de staff válidos + SIEMPRE incluir el rol 1441818963133731017
+  // Ese rol podrá ver TODOS los tickets aunque no esté en config.tickets.staffRoles
+  const allStaffRoles = [...new Set([...(config.tickets?.staffRoles ?? []), TICKET_VIEWER_ROLE_ID])];
+  const validStaffRoles = allStaffRoles.filter(id => {
+    // El rol viewer siempre se intenta incluir; si no está en caché intentamos fetchearlo después
+    if (id === TICKET_VIEWER_ROLE_ID) return true;
+    return guild.roles.cache.has(id);
+  });
+  // Si el rol viewer no está en caché, intentar fetchearlo para validar que existe
+  if (!guild.roles.cache.has(TICKET_VIEWER_ROLE_ID)) {
+    try { await guild.roles.fetch(TICKET_VIEWER_ROLE_ID); } catch {}
+  }
+  // Si tras el fetch sigue sin existir, lo filtramos para no romper la creación del canal
+  const finalStaffRoles = validStaffRoles.filter(id => id !== TICKET_VIEWER_ROLE_ID || guild.roles.cache.has(id));
+
+  // Persistir el rol en la config si no estaba (para que aparezca en futuros listados)
+  if (! (config.tickets?.staffRoles ?? []).includes(TICKET_VIEWER_ROLE_ID)) {
+    try {
+      const cfg = await GuildConfig.findOne({ guildId: guild.id });
+      if (cfg && !cfg.tickets.staffRoles.includes(TICKET_VIEWER_ROLE_ID)) {
+        cfg.tickets.staffRoles.push(TICKET_VIEWER_ROLE_ID);
+        await cfg.save();
+      }
+    } catch {}
+  }
 
   const channel = await guild.channels.create({
     name: channelName,
@@ -193,7 +218,7 @@ async function handleTicketCreate(interaction, client) {
           PermissionFlagsBits.EmbedLinks,
         ],
       },
-      ...validStaffRoles.map(roleId => ({
+      ...finalStaffRoles.map(roleId => ({
         id: roleId,
         allow: [
           PermissionFlagsBits.ViewChannel,
@@ -231,7 +256,9 @@ async function handleTicketCreate(interaction, client) {
     messages:  0,
   });
 
-  const staffMention = (config.tickets?.staffRoles ?? []).map(r => `<@&${r}>`).join(' ') || '@Staff';
+  // Mención: siempre incluye el rol viewer + todos los staffRoles (deduplicado)
+  const mentionRoles = [...new Set([...(config.tickets?.staffRoles ?? []), TICKET_VIEWER_ROLE_ID])];
+  const staffMention = mentionRoles.map(r => `<@&${r}>`).join(' ') || `<@&${TICKET_VIEWER_ROLE_ID}>`;
 
   const ticketEmbed = new EmbedBuilder()
     .setColor(catInfo.color)
@@ -250,7 +277,7 @@ async function handleTicketCreate(interaction, client) {
       { name: '🕐 Abierto el',      value: `<t:${Math.floor(Date.now() / 1000)}:F>`,      inline: true },
     )
     .setThumbnail(user.displayAvatarURL({ dynamic: true }))
-    .setFooter({ text: 'Brooklyn Nights • Sistema de Tickets v2' })
+    .setFooter({ text: 'American Island • Sistema de Tickets v2' })
     .setTimestamp();
 
   const buttons = new ActionRowBuilder().addComponents(
@@ -419,7 +446,7 @@ async function confirmCloseTicket(interaction, channelId, client) {
           `**Cerrado por:** ${closedBy.tag}\n\n` +
           `Adjunto encontrarás la transcripción completa de tu ticket.`
         )
-        .setFooter({ text: 'Brooklyn Nights • Sistema de Tickets' })
+        .setFooter({ text: 'American Island • Sistema de Tickets' })
         .setTimestamp();
       await openedBy.send({ embeds: [dmEmbed], files }).catch(() => {});
     }
@@ -739,7 +766,7 @@ function buildTxt({ meta, lines }) {
 
   const header = [
     '╔══════════════════════════════════════════════════════════════════╗',
-    '║          TRANSCRIPCIÓN DE TICKET — Brooklyn Nights               ║',
+    '║          TRANSCRIPCIÓN DE TICKET — American Island               ║',
     '║          FURIA NETWORK — GTA V Roleplay                         ║',
     '╚══════════════════════════════════════════════════════════════════╝',
     '',
@@ -830,12 +857,12 @@ function buildTxt({ meta, lines }) {
     '',
     '─'.repeat(70),
     '',
-    '  Brooklyn Nights Roleplay',
+    '  American Island Roleplay',
     '  Sistema de Tickets v2',
     `  Generado el ${dateStr}`,
     `  ID de ticket: ${meta.ticketId}`,
     '',
-    '  🌐 https://brooklynnights.es',
+    '  🌐 https://airpda.xyz',
     '',
   ].join('\n');
 
@@ -887,7 +914,7 @@ function buildHtml({ meta, lines }) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Transcripción ${meta.ticketId} — Brooklyn Nights</title>
+  <title>Transcripción ${meta.ticketId} — American Island</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Segoe UI',sans-serif;background:#0f0f13;color:#dcddde;padding:20px}
@@ -933,7 +960,7 @@ function buildHtml({ meta, lines }) {
   <div class="messages">
 ${rows}
   </div>
-  <div class="footer">Brooklyn Nights • Sistema de Tickets v2 — generado el ${meta.generatedAt}</div>
+  <div class="footer">American Island • Sistema de Tickets v2 — generado el ${meta.generatedAt}</div>
 </body>
 </html>`;
 }
@@ -978,7 +1005,7 @@ function buildMd({ meta, lines }) {
     '',
     '---',
     '',
-    `*Brooklyn Nights • Sistema de Tickets v2 — Generado el ${meta.generatedAt}*`,
+    `*American Island • Sistema de Tickets v2 — Generado el ${meta.generatedAt}*`,
   ].join('\n');
 
   return header + body + footer;
@@ -1023,7 +1050,7 @@ function buildTranscriptEmbed(ticket, meta, { closedBy, claimedBy, openedBy, inv
       { name: '👥 Involucrados',     value: involvedMentions || 'N/A',                             inline: false },
       { name: '📅 Cerrado el',       value: `<t:${Math.floor(Date.now() / 1000)}:F>`,              inline: true },
     )
-    .setFooter({ text: 'Brooklyn Nights • Sistema de Tickets v2 — adjuntos: .txt .html .md' })
+    .setFooter({ text: 'American Island • Sistema de Tickets v2 — adjuntos: .txt .html .md' })
     .setTimestamp();
 }
 
@@ -1033,7 +1060,7 @@ function buildTranscriptEmbed(ticket, meta, { closedBy, claimedBy, openedBy, inv
 async function openWhitelistModal(interaction) {
   const modal = new ModalBuilder()
     .setCustomId('whitelist_form')
-    .setTitle('Solicitud de Whitelist — Brooklyn Nights');
+    .setTitle('Solicitud de Whitelist — American Island');
 
   const fields = [
     new TextInputBuilder()
@@ -1146,6 +1173,52 @@ function whitelistPanelMessage(guild) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
+// FIX PARA TICKETS YA ABIERTOS — añadir permiso al rol viewer
+// ════════════════════════════════════════════════════════════════════════════════
+async function fixExistingTicketsPermissions(client) {
+  const { PermissionFlagsBits } = require('discord.js');
+  const results = [];
+  const guilds = client.guilds.cache.values();
+  for (const guild of guilds) {
+    try {
+      // Asegurar que el rol esté en GuildConfig
+      const cfg = await GuildConfig.findOne({ guildId: guild.id });
+      if (cfg && !cfg.tickets.staffRoles.includes(TICKET_VIEWER_ROLE_ID)) {
+        cfg.tickets.staffRoles.push(TICKET_VIEWER_ROLE_ID);
+        await cfg.save();
+        results.push(`[config] Rol ${TICKET_VIEWER_ROLE_ID} añadido a GuildConfig de ${guild.name}`);
+      }
+      if (!guild.roles.cache.has(TICKET_VIEWER_ROLE_ID)) {
+        try { await guild.roles.fetch(TICKET_VIEWER_ROLE_ID); } catch {}
+      }
+      if (!guild.roles.cache.has(TICKET_VIEWER_ROLE_ID)) {
+        results.push(`[skip] Rol ${TICKET_VIEWER_ROLE_ID} no existe en ${guild.name}`);
+        continue;
+      }
+      const openTickets = await Ticket.find({ guildId: guild.id, status: 'open' });
+      for (const t of openTickets) {
+        const ch = await guild.channels.fetch(t.channelId).catch(() => null);
+        if (!ch) continue;
+        const perms = ch.permissionOverwrites.cache.get(TICKET_VIEWER_ROLE_ID);
+        if (!perms || !perms.allow.has(PermissionFlagsBits.ViewChannel)) {
+          await ch.permissionOverwrites.edit(TICKET_VIEWER_ROLE_ID, {
+            ViewChannel: true,
+            SendMessages: true,
+            ReadMessageHistory: true,
+            ManageMessages: true,
+            AttachFiles: true,
+          }).catch(e => results.push(`[error] ${t.channelId}: ${e.message}`));
+          results.push(`[fix] Permiso añadido a #${ch.name} (${t.channelId})`);
+        }
+      }
+    } catch (e) {
+      results.push(`[error guild ${guild.id}] ${e.message}`);
+    }
+  }
+  return results;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
 // EXPORTS
 // ════════════════════════════════════════════════════════════════════════════════
 module.exports = {
@@ -1165,4 +1238,6 @@ module.exports = {
   ticketRename,
   ticketClose,
   ticketTranscript,
+  fixExistingTicketsPermissions,
+  TICKET_VIEWER_ROLE_ID,
 };

@@ -111,7 +111,7 @@ async function captureEvidence(message, reason = 'Infracción detectada') {
 
     ctx.font = 'bold 13px "UIFont"';
     ctx.fillStyle = DC.WHITE;
-    ctx.fillText('EVIDENCIA DE INFRACCION  —  Brooklyn Nights', PAD + 24, 24);
+    ctx.fillText('EVIDENCIA DE INFRACCION  —  American Island', PAD + 24, 24);
 
     let y = HDR + PAD;
 

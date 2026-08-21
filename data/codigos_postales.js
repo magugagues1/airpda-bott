@@ -1024,6 +1024,6 @@ function getCoord(zona, codigo) {
   if (!mapa) return null;
   return mapa[codigo] || null;
 }
-
+  
 module.exports.getCoord = getCoord;
 module.exports.ZONAS = ZONAS;

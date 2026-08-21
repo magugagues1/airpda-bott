@@ -364,7 +364,46 @@ async function execute(interaction, client) {
       }
     }
 
-    inv.addItem({ id: item.id, nombre: item.nombre, emoji: item.emoji, tipo: item.tipo, precio: item.precio, descripcion: item.desc, efecto: item.efecto || {}, equipable: item.equipable || false, equipado: false, metadata: {} }, cantidad);
+    // Si es licencia/documento con validez 30 días, crear Licencia en PDA con caducidad y guardar vencimiento en inventario
+    const licenciaTipos = { 'licencia_b': 'coche', 'licencia_a': 'moto', 'licencia_c': 'camion', 'permiso_armas': 'armas', 'licencia_bar': 'bar' };
+    let licenciaTipo = licenciaTipos[item.id] || null;
+    let vencimiento = null;
+    if (licenciaTipo) {
+      vencimiento = new Date(); vencimiento.setDate(vencimiento.getDate() + 30);
+      const idx = inv.items.findIndex(i => i.id === item.id);
+      if (idx !== -1) inv.items[idx].metadata = { ...(inv.items[idx].metadata || {}), fechaVencimiento: vencimiento.toISOString(), tipoLicencia: licenciaTipo };
+      // Crear/actualizar Licencia en colección airp_pda.licencias para PDA
+      try {
+        const mongoose = require('mongoose');
+        const Licencia = mongoose.models.Licencia || mongoose.model('Licencia', new mongoose.Schema({ propietarioId: String, propietarioNombre: String, tipo: String, numeroLicencia: String, estado: String, fechaExpedicion: Date, fechaVencimiento: Date, diasValidez: Number, registradoPor: String, fecha: Date }, { collection: 'licencias', strict: false }));
+        const idx2 = inv.items.findIndex(i => i.id === item.id);
+        const licNum = `LIC-${licenciaTipo.toUpperCase().slice(0,3)}-${Date.now().toString(36).toUpperCase()}`;
+        // Evitar duplicar si ya tiene licencia vigente del mismo tipo
+        const existente = await Licencia.findOne({ propietarioId: interaction.user.id, tipo: licenciaTipo, estado: 'vigente' }).catch(() => null);
+        if (!existente) {
+          await Licencia.create({
+            propietarioId: interaction.user.id,
+            propietarioNombre: `${player.nombre} ${player.apellido}`.trim() || interaction.user.username,
+            tipo: licenciaTipo,
+            numeroLicencia: licNum,
+            estado: 'vigente',
+            fechaExpedicion: new Date(),
+            fechaVencimiento: vencimiento,
+            diasValidez: 30,
+            registradoPor: 'BOT-Tienda',
+            fecha: new Date(),
+          });
+        } else {
+          // Renovar existente
+          existente.fechaExpedicion = new Date();
+          existente.fechaVencimiento = vencimiento;
+          existente.estado = 'vigente';
+          await existente.save();
+        }
+      } catch (e) { console.error('Licencia sync error:', e.message); }
+    }
+
+    inv.addItem({ id: item.id, nombre: item.nombre, emoji: item.emoji, tipo: item.tipo, precio: item.precio, descripcion: item.desc, efecto: item.efecto || {}, equipable: item.equipable || false, equipado: false, metadata: licenciaTipo ? { tipoLicencia: licenciaTipo, fechaVencimiento: vencimiento ? vencimiento.toISOString() : null } : {} }, cantidad);
     player.cash -= total;
 
     await inv.save();
@@ -667,11 +706,26 @@ const prefixCommands = [
       if (player.cash < total) return message.reply(`❌ Necesitas ${formatMoney(total)}. Tienes: ${formatMoney(player.cash)}`);
 
       const inv = await getInventory(message.author.id);
-      inv.addItem({ id: item.id, nombre: item.nombre, emoji: item.emoji, tipo: item.tipo, precio: item.precio, descripcion: item.desc, efecto: item.efecto || {}, equipable: item.equipable || false, equipado: false, metadata: {} }, cantidad);
+      const licenciaTipos2 = { 'licencia_b': 'coche', 'licencia_a': 'moto', 'licencia_c': 'camion', 'permiso_armas': 'armas', 'licencia_bar': 'bar' };
+      let tipo2 = licenciaTipos2[item.id] || null;
+      let venc2 = null;
+      if (tipo2) {
+        venc2 = new Date(); venc2.setDate(venc2.getDate() + 30);
+        try {
+          const mongoose2 = require('mongoose');
+          const Licencia2 = mongoose2.models.Licencia || mongoose2.model('Licencia', new mongoose.Schema({ propietarioId: String, propietarioNombre: String, tipo: String, numeroLicencia: String, estado: String, fechaExpedicion: Date, fechaVencimiento: Date, diasValidez: Number, registradoPor: String, fecha: Date }, { collection: 'licencias', strict: false }));
+          const licNum2 = `LIC-${tipo2.toUpperCase().slice(0,3)}-${Date.now().toString(36).toUpperCase()}`;
+          const exist2 = await Licencia2.findOne({ propietarioId: message.author.id, tipo: tipo2, estado: 'vigente' }).catch(() => null);
+          if (!exist2) {
+            await Licencia2.create({ propietarioId: message.author.id, propietarioNombre: `${player.nombre} ${player.apellido}`.trim() || message.author.username, tipo: tipo2, numeroLicencia: licNum2, estado: 'vigente', fechaExpedicion: new Date(), fechaVencimiento: venc2, diasValidez: 30, registradoPor: 'BOT-Tienda', fecha: new Date() });
+          } else { exist2.fechaVencimiento = venc2; exist2.fechaExpedicion = new Date(); exist2.estado = 'vigente'; await exist2.save(); }
+        } catch (e) { console.error('Licencia sync prefix error:', e.message); }
+      }
+      inv.addItem({ id: item.id, nombre: item.nombre, emoji: item.emoji, tipo: item.tipo, precio: item.precio, descripcion: item.desc, efecto: item.efecto || {}, equipable: item.equipable || false, equipado: false, metadata: tipo2 ? { tipoLicencia: tipo2, fechaVencimiento: venc2 ? venc2.toISOString() : null } : {} }, cantidad);
       player.cash -= total;
       await inv.save();
       await player.save();
-      return message.reply(`${item.emoji} Compraste **${cantidad}x ${item.nombre}** por **${formatMoney(total)}**. Cash: ${formatMoney(player.cash)}`);
+      return message.reply(`${item.emoji} Compraste **${cantidad}x ${item.nombre}** por **${formatMoney(total)}**. Cash: ${formatMoney(player.cash)}${tipo2 ? ` · Licencia válida 30 días hasta ${venc2.toLocaleDateString('es-ES')}` : ''}`);
     },
   },
   {

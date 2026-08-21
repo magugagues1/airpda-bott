@@ -65,19 +65,51 @@ const api = {
 
   async getSancionesByDiscordId(discordId) {
     const { User, Sancion } = getModels();
+    const Player = require('../database/models/Player');
     const pdaUser = await User.findOne({ discordId }).lean().catch(() => null);
+    const botPlayer = await Player.findOne({ discordId }).lean().catch(() => null);
 
-    const orClauses = [{ ciudadanoDiscordId: discordId }];
-    if (pdaUser) {
-      orClauses.push({ ciudadanoId: pdaUser._id.toString() });
-      if (pdaUser.nombre && pdaUser.apellido) {
-        orClauses.push({
-          ciudadanoNombre: { $regex: `${pdaUser.nombre}\\s+${pdaUser.apellido}`, $options: 'i' },
-        });
-      }
+    // Normalizador para comparar sin acentos y espacios múltiples
+    const normalize = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const targetNames = new Set();
+    if (pdaUser?.nombre) targetNames.add(normalize(`${pdaUser.nombre} ${pdaUser.apellido || ''}`));
+    if (botPlayer?.nombre) targetNames.add(normalize(`${botPlayer.nombre} ${botPlayer.apellido || ''}`));
+    // También probar con el username como fallback
+    if (pdaUser?.discordUsername) targetNames.add(normalize(pdaUser.discordUsername));
+    if (botPlayer?.discordUsername) targetNames.add(normalize(botPlayer.discordUsername));
+
+    // Si tenemos discordId directo, primero intentar con él
+    const orClauses = [{ ciudadanoDiscordId: discordId }, { ciudadanoId: discordId }];
+    if (pdaUser) orClauses.push({ ciudadanoId: pdaUser._id.toString() });
+
+    // Intentar búsqueda directa por discordId primero (rápida, para nuevas sanciones con ciudadanoDiscordId)
+    let direct = [];
+    try { direct = await Sancion.find({ $or: orClauses, activa: { $ne: false } }).sort({ fecha: -1 }).lean(); } catch {}
+    if (direct.length) {
+      // Aun así filtrar por nombre normalizado para asegurar que no se cuelan de otros con mismo discordId en ciudadanoId string
+      // y complementar con búsqueda por nombre si faltan
     }
 
-    return Sancion.find({ $or: orClauses, activa: { $ne: false } }).sort({ fecha: -1 }).lean();
+    // Búsqueda por nombre normalizado (para sanciones viejas sin ciudadanoDiscordId)
+    let byName = [];
+    if (targetNames.size) {
+      try {
+        const all = await Sancion.find({ activa: { $ne: false } }).lean();
+        byName = all.filter(s => {
+          const n = normalize(s.ciudadanoNombre || '');
+          for (const tn of targetNames) if (n && n === tn) return true;
+          // También buscar si el nombre contiene la parte principal (fallback para casos con espacios dobles)
+          for (const tn of targetNames) if (n && tn && (n.includes(tn) || tn.includes(n))) return true;
+          return false;
+        });
+      } catch {}
+    }
+
+    // Unir y deduplicar por _id
+    const map = new Map();
+    for (const s of [...direct, ...byName]) map.set(String(s._id), s);
+    const result = Array.from(map.values()).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+    return result;
   },
 
   async getSancionesByCiudadanoId(ciudadanoMongoId) {
